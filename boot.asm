@@ -4,6 +4,8 @@
 ORG 0                     ; Set code origin to 0x7C00 (where BIOS loads the boot sector)
 BITS 16                   ; 16-bit real mode (8086 compatible)
 
+jmp 0x7c0:start
+
 start:
     cli                   ; Disable interrupts during setup for safety
     mov ax, 0x7c0         ; Set segment registers to 0x7C00 (boot sector load address >> 4)
