@@ -1,0 +1,130 @@
+schema_version = 1
+project = "makopa-os"
+research_decisions = []
+
+[authority]
+source_priority = [
+  "docs/architecture/overview.md",
+  "docs/roadmap/implementation-roadmap.md",
+  "docs/architecture/decisions/",
+  "code-and-tests",
+  "supporting-documentation",
+]
+evidence_is_authoritative = false
+
+[review]
+last_reviewed = "2026-08-10"
+review_due = "2026-09-10"
+
+[[objectives]]
+id = "OBJ-BOOT-REAL"
+statement = "Keep each development phase grounded in a reproducibly bootable machine image."
+status = "active"
+source_refs = ["docs/architecture/overview.md#product-principles"]
+validation_refs = ["docs/roadmap/implementation-roadmap.md#phase-0-reproducible-baseline"]
+
+[[objectives]]
+id = "OBJ-EXPLICIT-AUTHORITY"
+statement = "Isolate delegated workloads through explicit, observable authority boundaries."
+status = "active"
+source_refs = ["docs/architecture/overview.md#vision"]
+validation_refs = ["docs/security/threat-model.md#protected-properties"]
+
+[[objectives]]
+id = "OBJ-TRACEABLE-CHANGE"
+statement = "Keep direction, delivery, verification, validation, and risk evidence reviewable without creating a second authority."
+status = "active"
+source_refs = ["CONTRIBUTING.md#sources-of-truth"]
+validation_refs = ["docs/governance/project-evidence.md#validation"]
+
+[[requirements]]
+id = "REQ-BOOT-SECTOR-VERIFICATION"
+statement = "Build and structurally verify the legacy BIOS boot sector on each pull request and main-branch push."
+status = "implemented"
+objective_ids = ["OBJ-BOOT-REAL", "OBJ-TRACEABLE-CHANGE"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os001-boot-sector-verification"]
+design_refs = ["docs/architecture/overview.md#boot-boundary"]
+implementation_refs = ["boot.asm", "scripts/verify_boot.py"]
+verification_refs = ["tests/test_verify_boot.py"]
+validation_refs = ["docs/development/testing.md#boot-sector-gate"]
+risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures"]
+
+[[requirements]]
+id = "REQ-PROJECT-EVIDENCE"
+statement = "Validate a derived, repository-local evidence index with an offline deterministic checker."
+status = "implemented"
+objective_ids = ["OBJ-TRACEABLE-CHANGE"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os002-project-evidence-gate"]
+design_refs = ["CONTRIBUTING.md#sources-of-truth", "docs/governance/project-evidence.md#authority-boundary"]
+implementation_refs = [".github/workflows/ci.yml", "docs/governance/project-evidence.toml", "scripts/check_project_evidence.py"]
+verification_refs = ["tests/test_project_evidence.py"]
+validation_refs = ["docs/governance/project-evidence.md#validation"]
+risk_refs = ["docs/security/threat-model.md#required-controls"]
+
+[[requirements]]
+id = "REQ-MODERN-BOOT"
+statement = "Boot a memory-safe x86-64 kernel through a versioned modern firmware handoff."
+status = "planned"
+objective_ids = ["OBJ-BOOT-REAL"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision"]
+design_refs = ["docs/architecture/overview.md#boot-boundary"]
+implementation_refs = []
+verification_refs = []
+validation_refs = []
+risk_refs = []
+
+[[requirements]]
+id = "REQ-EXPLICIT-CAPABILITIES"
+statement = "Authorize task effects through unforgeable, scoped capability handles."
+status = "planned"
+objective_ids = ["OBJ-EXPLICIT-AUTHORITY"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os030-capability-handle-table"]
+design_refs = ["docs/architecture/overview.md#security-model"]
+implementation_refs = []
+verification_refs = []
+validation_refs = []
+risk_refs = []
+
+[[requirements]]
+id = "REQ-PORTABLE-WORKLOADS"
+statement = "Host portable components without granting undeclared system authority."
+status = "planned"
+objective_ids = ["OBJ-EXPLICIT-AUTHORITY"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"]
+design_refs = ["docs/architecture/overview.md#workload-boundary"]
+implementation_refs = []
+verification_refs = []
+validation_refs = []
+risk_refs = []
+
+[[requirements]]
+id = "REQ-PROTOCOL-GATEWAYS"
+statement = "Terminate external workload protocols in replaceable user-space gateways."
+status = "planned"
+objective_ids = ["OBJ-EXPLICIT-AUTHORITY"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os051-protocol-adapter-study"]
+design_refs = ["docs/architecture/overview.md#workload-boundary"]
+implementation_refs = []
+verification_refs = []
+validation_refs = []
+risk_refs = []
+
+[[work_items]]
+id = "OS001-BOOT-SECTOR"
+title = "Add reproducible boot-sector verification and nominal CI"
+status = "closed"
+requirement_ids = ["REQ-BOOT-SECTOR-VERIFICATION"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os001-boot-sector-verification"]
+approval_ref = "https://github.com/xsparc/MakopaOS/pull/1"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os001-boot-sector-verification"]
+evidence_refs = [".github/workflows/ci.yml", "scripts/verify_boot.py", "tests/test_verify_boot.py"]
+
+[[work_items]]
+id = "OS002-PROJECT-EVIDENCE"
+title = "Add a native project evidence registry and offline gate"
+status = "in-progress"
+requirement_ids = ["REQ-PROJECT-EVIDENCE"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os002-project-evidence-gate"]
+approval_ref = "conversation:2026-08-10-approve-os002"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os002-project-evidence-gate"]
+evidence_refs = [".github/workflows/ci.yml", "CONTRIBUTING.md", "docs/development/testing.md", "docs/governance/project-evidence.md", "docs/governance/project-evidence.toml", "scripts/check_project_evidence.py", "tests/test_project_evidence.py"]

@@ -1,6 +1,6 @@
 # MakopaOS implementation roadmap
 
-- Status: Proposed, except OS001
+- Status: Active; item states are recorded below
 - Baseline: `507428c3d98a8b6cea06d6cd9800cb6f0aa002e1`
 - Updated: 2026-08-10
 
@@ -12,7 +12,7 @@ its own pull request unless a maintainer explicitly changes the boundary.
 
 ### OS001 — Boot-sector verification
 
-Status: Approved
+Status: Closed
 
 Scope:
 
@@ -33,7 +33,7 @@ Non-scope: boot behavior changes, UEFI code, kernel scaffolding, releases.
 
 ### OS002 — Project evidence gate
 
-Status: Proposed
+Status: In progress
 
 Depends on: OS001
 
@@ -45,6 +45,9 @@ approval rules.
 Acceptance: the checker rejects missing and unsafe references, unknown IDs,
 unindexed accepted decisions, stale reviews, and implemented requirements
 without verification evidence; a strict mode is part of CI.
+
+Non-scope: architecture promotion, research disposition, kernel code, release
+automation, and external publication behavior.
 
 ## Phase 1: Modern boot handoff
 
