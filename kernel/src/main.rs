@@ -7,7 +7,7 @@ use core::panic::PanicInfo;
 
 use makopa_boot_contract::BootHandoffV1;
 
-const KERNEL_SERIAL: u16 = 0x2f8;
+const KERNEL_SERIAL: u16 = 0x3f8;
 const QEMU_EXIT_PORT: u16 = 0xf4;
 const QEMU_SUCCESS: u32 = 0x10;
 const QEMU_FAILURE: u32 = 0x11;

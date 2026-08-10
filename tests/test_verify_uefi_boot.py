@@ -17,12 +17,20 @@ class VerifyUefiBootTests(unittest.TestCase):
             [], boot_violations(EXPECTED_EXIT_CODE, EXPECTED_SERIAL)
         )
 
+    def test_accepts_firmware_prefix_before_kernel_transcript(self) -> None:
+        stdout = b"OVMF console record\r\n" + EXPECTED_SERIAL
+        self.assertEqual([], boot_violations(EXPECTED_EXIT_CODE, stdout))
+
     def test_rejects_changed_transcript(self) -> None:
         errors = boot_violations(EXPECTED_EXIT_CODE, b"MakopaOS dev\r\n")
         self.assertTrue(any("transcript mismatch" in error for error in errors))
 
     def test_rejects_duplicate_transcript(self) -> None:
         errors = boot_violations(EXPECTED_EXIT_CODE, EXPECTED_SERIAL * 2)
+        self.assertTrue(any("transcript mismatch" in error for error in errors))
+
+    def test_rejects_bytes_after_kernel_transcript(self) -> None:
+        errors = boot_violations(EXPECTED_EXIT_CODE, EXPECTED_SERIAL + b"trailing")
         self.assertTrue(any("transcript mismatch" in error for error in errors))
 
     def test_rejects_changed_exit_status(self) -> None:
@@ -52,7 +60,7 @@ class VerifyUefiBootTests(unittest.TestCase):
             for index, argument in enumerate(command)
             if argument == "-serial"
         ]
-        self.assertEqual(["null", "stdio"], serial_channels)
+        self.assertEqual(["stdio"], serial_channels)
 
 
 if __name__ == "__main__":

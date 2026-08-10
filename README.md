@@ -17,7 +17,7 @@ a capability-oriented runtime with a small, auditable trusted core.
 - produces an exact 512-byte image with the `0x55AA` boot signature;
 - builds a pinned UEFI application and ELF kernel with Rust `1.97.1`;
 - validates the version-one boot ABI and kernel ELF before transfer;
-- emits `MakopaOS 0.1.0` over a dedicated serial channel and exits QEMU
+- emits `MakopaOS 0.1.0` over the serial console and exits QEMU
   deterministically.
 
 ## Build and verify

@@ -58,7 +58,8 @@ QEMU executable exposes `isa-debug-exit`, boots the directory through a
 read-only VVFAT device with a disposable OVMF variable store, and then requires
 both:
 
-- the exact serial transcript `MakopaOS 0.1.0\r\n`;
+- the exact kernel transcript `MakopaOS 0.1.0\r\n` appears once as the terminal
+  serial record, after any firmware console records;
 - QEMU process status `33`, produced by writing success value `0x10` to port
   `0xf4`.
 
