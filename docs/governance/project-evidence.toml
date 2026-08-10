@@ -1,6 +1,5 @@
 schema_version = 1
 project = "makopa-os"
-research_decisions = []
 
 [authority]
 source_priority = [
@@ -128,3 +127,73 @@ roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os002-project-evidence-g
 approval_ref = "conversation:2026-08-10-approve-os002"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os002-project-evidence-gate"]
 evidence_refs = [".github/workflows/ci.yml", "CONTRIBUTING.md", "docs/development/testing.md", "docs/governance/project-evidence.md", "docs/governance/project-evidence.toml", "scripts/check_project_evidence.py", "tests/test_project_evidence.py"]
+
+[[work_items]]
+id = "OS003-STANDARDS-BASELINE"
+title = "Refresh the 2026-Q3 standards baselines and future acceptance criteria"
+status = "closed"
+requirement_ids = ["REQ-MODERN-BOOT", "REQ-EXPLICIT-CAPABILITIES", "REQ-PORTABLE-WORKLOADS", "REQ-PROTOCOL-GATEWAYS"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os003-2026-q3-standards-baseline-refresh"]
+approval_ref = "conversation:2026-08-10-approve-os003"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os003-2026-q3-standards-baseline-refresh"]
+evidence_refs = ["docs/architecture/overview.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
+
+[[research_decisions]]
+id = "RSH-PROTOCOL-BASELINE-2026Q3"
+finding = "MCP 2026-07-28 and A2A 1.0.1 are the current stable study baselines for replaceable user-space protocol gateways."
+disposition = "adopted"
+source_urls = ["https://blog.modelcontextprotocol.io/posts/2026-07-28/", "https://github.com/a2aproject/A2A/releases/tag/v1.0.1"]
+observed_on = "2026-08-10"
+reviewed_on = "2026-08-10"
+review_due = "2026-09-10"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os051-protocol-adapter-study"
+
+[[research_decisions]]
+id = "RSH-WASI-BASELINE-2026Q3"
+finding = "WASI 0.3 became stable on 2026-06-11 with native asynchronous component semantics and should be compared with the maintained 0.2 baseline."
+disposition = "adopted"
+source_urls = ["https://wasi.dev/releases/wasi-p3"]
+observed_on = "2026-08-10"
+reviewed_on = "2026-08-10"
+review_due = "2026-09-10"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"
+
+[[research_decisions]]
+id = "RSH-AGENT-SECURITY-2026Q3"
+finding = "Current agent-security guidance reinforces scoped identity, delegated authorization, effect attribution, and containment after prompt injection."
+disposition = "adopted"
+source_urls = ["https://www.nist.gov/artificial-intelligence/ai-agent-standards-initiative", "https://www.nccoe.nist.gov/sites/default/files/2026-02/accelerating-the-adoption-of-software-and-ai-agent-identity-and-authorization-concept-paper.pdf", "https://www.nist.gov/blogs/caisi-research-blog/insights-ai-agent-security-large-scale-red-teaming-competition", "https://github.blog/ai-and-ml/generative-ai/under-the-hood-security-architecture-of-github-agentic-workflows/"]
+observed_on = "2026-08-10"
+reviewed_on = "2026-08-10"
+review_due = "2026-09-10"
+decision_ref = "docs/architecture/overview.md#security-model"
+
+[[research_decisions]]
+id = "RSH-EVALUATION-EVIDENCE-2026Q3"
+finding = "Coding benchmark defects make repository-native executable acceptance evidence more reliable than aggregate benchmark claims for project decisions."
+disposition = "adopted"
+source_urls = ["https://openai.com/index/separating-signal-from-noise-coding-evaluations/"]
+observed_on = "2026-08-10"
+reviewed_on = "2026-08-10"
+review_due = "2026-09-10"
+decision_ref = "docs/architecture/overview.md#product-principles"
+
+[[research_decisions]]
+id = "RSH-BOOT-TOOLCHAIN-2026Q3"
+finding = "Rust 1.97.1 and uefi-rs 0.39 are current OS010 candidates but require security and compatibility revalidation before pinning."
+disposition = "monitoring"
+source_urls = ["https://doc.rust-lang.org/stable/releases.html", "https://docs.rs/crate/uefi/0.39.0", "https://uefi.org/specifications"]
+observed_on = "2026-08-10"
+reviewed_on = "2026-08-10"
+review_due = "2026-09-10"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision"
+
+[[research_decisions]]
+id = "RSH-SUPPLY-CHAIN-2026Q3"
+finding = "SLSA 1.2 and GitHub artifact attestations are suitable future provenance options once MakopaOS publishes release artifacts."
+disposition = "monitoring"
+source_urls = ["https://slsa.dev/spec/v1.2/", "https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations"]
+observed_on = "2026-08-10"
+reviewed_on = "2026-08-10"
+review_due = "2026-09-10"
+decision_ref = "docs/architecture/overview.md#security-model"
