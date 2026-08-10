@@ -50,11 +50,6 @@ jobs:
             -p makopa-boot-contract \
             -p makopa-kernel-image
 
-      - name: Audit locked Rust dependencies
-        run: |
-          cargo +1.97.1 install cargo-audit --version 0.22.2 --locked
-          cargo +1.97.1 audit --deny warnings
-
       - name: Check project evidence
         run: |
           python3 scripts/check_project_evidence.py
@@ -75,3 +70,8 @@ jobs:
             --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd \
             --ovmf-vars /usr/share/OVMF/OVMF_VARS_4M.fd \
             --esp build/esp
+
+      - name: Audit locked Rust dependencies
+        run: |
+          cargo +1.97.1 install cargo-audit --version 0.22.2 --locked
+          cargo +1.97.1 audit --deny warnings
