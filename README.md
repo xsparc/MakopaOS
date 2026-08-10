@@ -1,54 +1,52 @@
-# MakopaOS: A Minimal x86 Bootloader Operating System
+# MakopaOS
 
-MakopaOS is a simple, educational operating system bootloader written in x86 assembly. It demonstrates how to create a bootable binary that prints a custom message ("MAKOPA") to the screen using BIOS interrupts. This project is ideal for those learning about low-level programming, operating system fundamentals, and x86 architecture.
+MakopaOS is a compact operating-systems laboratory for learning how a machine
+boots and how a small kernel can enforce explicit authority between isolated
+workloads.
 
-## Features
-- 16-bit real mode x86 assembly
-- BIOS interrupt usage for direct screen output
-- Minimal boot sector (512 bytes)
-- Educational and easy to understand
+Today the repository contains a 512-byte, 16-bit BIOS boot sector that prints
+`MAKOPA`. The proposed direction preserves that working baseline while growing
+toward an x86-64, capability-oriented runtime with deterministic tests and a
+small, auditable trusted core.
 
-## Getting Started
+## Current capabilities
 
-### Prerequisites
-- [NASM](https://www.nasm.us/) (Netwide Assembler)
-- [QEMU](https://www.qemu.org/) (for emulation/testing)
-- [ndisasm](https://www.nasm.us/doc/nasmdoc8.html) (optional, for disassembly)
+- boots as a legacy BIOS sector;
+- initializes the real-mode segment and stack registers;
+- writes through BIOS interrupt `0x10`;
+- produces an exact 512-byte image with the `0x55AA` boot signature.
 
-### Building the Boot Sector
+## Build and verify
 
-Assemble the bootloader source code into a bootable binary:
+Prerequisites:
 
-```sh
-nasm -f bin -o boot.bin boot.asm
-```
-
-### Inspecting the Binary (Optional)
-
-Disassemble the binary to view the generated assembly instructions:
+- [NASM](https://www.nasm.us/);
+- Python 3.11 or newer;
+- [QEMU](https://www.qemu.org/) for interactive boot testing.
 
 ```sh
-ndisasm ./boot.bin
+nasm -Wall -Werror -f bin -o boot.bin boot.asm
+python scripts/verify_boot.py boot.bin
+qemu-system-x86_64 -drive format=raw,file=boot.bin
 ```
 
-### Running MakopaOS in QEMU
+`boot.bin` is generated and intentionally excluded from version control.
 
-Boot the binary in a virtual machine using QEMU:
+## Direction
 
-```sh
-qemu-system-x86_64 -hda ./boot.bin
-```
+The target is an educational runtime with four clear boundaries:
 
-## Project Structure
-- `boot.asm` — Main bootloader source code (x86 assembly)
-- `boot.bin` — Compiled boot sector binary (generated)
+1. firmware-specific boot code;
+2. a memory-safe kernel core for memory, tasks, IPC, and capability handles;
+3. isolated system services with structured event records;
+4. optional user-space gateways for external workload protocols.
 
-## Contributing
-Contributions, suggestions, and improvements are welcome! Please open an issue or submit a pull request.
+The kernel will remain independent of model vendors and network services.
+External requests are data, not authority: privileged operations require
+explicit capabilities and produce inspectable evidence.
+
+See [the architecture](docs/architecture/overview.md), [the roadmap](docs/roadmap/implementation-roadmap.md), and [the contribution guide](CONTRIBUTING.md).
 
 ## License
-This project is released under the Apache License.
 
----
-
-*Keywords: x86 bootloader, operating system, assembly, BIOS interrupt, NASM, QEMU, educational OS, minimal OS, open source*
+MakopaOS is licensed under the Apache License 2.0.
