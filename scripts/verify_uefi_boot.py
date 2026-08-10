@@ -55,30 +55,7 @@ def run_qemu(
     with tempfile.TemporaryDirectory(prefix="makopa-qemu-") as directory:
         variables = Path(directory) / "OVMF_VARS.fd"
         shutil.copyfile(ovmf_vars, variables)
-        command = [
-            qemu,
-            "-machine",
-            "q35",
-            "-m",
-            "128M",
-            "-display",
-            "none",
-            "-monitor",
-            "none",
-            "-serial",
-            "stdio",
-            "-no-reboot",
-            "-net",
-            "none",
-            "-drive",
-            f"if=pflash,format=raw,unit=0,readonly=on,file={ovmf_code.resolve()}",
-            "-drive",
-            f"if=pflash,format=raw,unit=1,file={variables.resolve()}",
-            "-hdb",
-            f"fat:{esp.resolve()}",
-            "-device",
-            "isa-debug-exit,iobase=0xf4,iosize=0x04",
-        ]
+        command = qemu_command(qemu, ovmf_code, variables, esp)
         try:
             result = subprocess.run(
                 command,
@@ -89,6 +66,45 @@ def run_qemu(
         except subprocess.TimeoutExpired as error:
             return 124, error.stdout or b"", error.stderr or b""
         return result.returncode, result.stdout, result.stderr
+
+
+def qemu_command(
+    qemu: str,
+    ovmf_code: Path,
+    ovmf_vars: Path,
+    esp: Path,
+) -> list[str]:
+    """Construct the reference command with an explicitly read-only ESP."""
+    esp_backend = (
+        "driver=vvfat,node-name=makopa-esp,read-only=on,dir="
+        f"{esp.resolve()}"
+    )
+    return [
+        qemu,
+        "-machine",
+        "q35",
+        "-m",
+        "128M",
+        "-display",
+        "none",
+        "-monitor",
+        "none",
+        "-serial",
+        "stdio",
+        "-no-reboot",
+        "-net",
+        "none",
+        "-drive",
+        f"if=pflash,format=raw,unit=0,readonly=on,file={ovmf_code.resolve()}",
+        "-drive",
+        f"if=pflash,format=raw,unit=1,file={ovmf_vars.resolve()}",
+        "-blockdev",
+        esp_backend,
+        "-device",
+        "virtio-blk-pci,drive=makopa-esp",
+        "-device",
+        "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    ]
 
 
 def main() -> int:
