@@ -66,7 +66,7 @@ statement = "Boot a memory-safe x86-64 kernel through a versioned modern firmwar
 status = "planned"
 objective_ids = ["OBJ-BOOT-REAL"]
 roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision"]
-design_refs = ["docs/architecture/overview.md#boot-boundary"]
+design_refs = ["docs/architecture/overview.md#boot-boundary", "docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md"]
 implementation_refs = []
 verification_refs = []
 validation_refs = []
@@ -138,6 +138,16 @@ approval_ref = "conversation:2026-08-10-approve-os003"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os003-2026-q3-standards-baseline-refresh"]
 evidence_refs = ["docs/architecture/overview.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
 
+[[work_items]]
+id = "OS010-BOOT-CONTRACT"
+title = "Select the modern boot toolchain and versioned handoff"
+status = "closed"
+requirement_ids = ["REQ-MODERN-BOOT"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision"]
+approval_ref = "conversation:2026-08-10-approve-os010"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision"]
+evidence_refs = ["docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
+
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
 finding = "MCP 2026-07-28 and A2A 1.0.1 are the current stable study baselines for replaceable user-space protocol gateways."
@@ -180,13 +190,23 @@ decision_ref = "docs/architecture/overview.md#product-principles"
 
 [[research_decisions]]
 id = "RSH-BOOT-TOOLCHAIN-2026Q3"
-finding = "Rust 1.97.1 and uefi-rs 0.39 are current OS010 candidates but require security and compatibility revalidation before pinning."
-disposition = "monitoring"
-source_urls = ["https://doc.rust-lang.org/stable/releases.html", "https://docs.rs/crate/uefi/0.39.0", "https://uefi.org/specifications"]
+finding = "Rust 1.97.1, uefi 0.39.0, UEFI 2.11, Rust's UEFI and freestanding x86-64 targets, bundled rust-lld, and the Ubuntu 20260810T000000Z NASM, QEMU, and OVMF packages form the adopted OS010 reproducible toolchain baseline."
+disposition = "adopted"
+source_urls = ["https://doc.rust-lang.org/stable/releases.html#version-1971-2026-03-05", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-uefi.html", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html", "https://docs.rs/crate/uefi/0.39.0", "https://uefi.org/specs/UEFI/2.11/", "https://snapshot.ubuntu.com/"]
 observed_on = "2026-08-10"
 reviewed_on = "2026-08-10"
 review_due = "2026-09-10"
-decision_ref = "docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision"
+decision_ref = "docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md"
+
+[[research_decisions]]
+id = "RSH-MAINTAINED-BOOTLOADER-2026Q3"
+finding = "rust-osdev bootloader 0.11.17 is not selected for the initial path because it remains experimental, requires nightly Rust and llvm-tools-preview, and would couple kernel entry to bootloader_api; it remains a reconsideration option."
+disposition = "rejected"
+source_urls = ["https://github.com/rust-osdev/bootloader", "https://github.com/rust-osdev/bootloader/releases/tag/v0.11.17"]
+observed_on = "2026-08-10"
+reviewed_on = "2026-08-10"
+review_due = "2026-09-10"
+decision_ref = "docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md"
 
 [[research_decisions]]
 id = "RSH-SUPPLY-CHAIN-2026Q3"

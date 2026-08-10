@@ -1,7 +1,7 @@
 # MakopaOS implementation roadmap
 
 - Status: Active; item states are recorded below
-- Baseline: `77a3bfd2f1b35a319665a92693f4e405277e50e1`
+- Baseline: `7c8c62bbe2cf548b7a92ef52b9cc9a98242c7a62`
 - Updated: 2026-08-10
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
@@ -77,7 +77,7 @@ topology, release automation, protocol implementation, and phase promotion.
 
 ### OS010 — Toolchain and boot-contract decision
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS003
 
@@ -85,12 +85,21 @@ Record the pinned Rust, NASM, QEMU, firmware, target, and linker contract. Defin
 the versioned x86-64 boot handoff and decide whether the initial UEFI loader is
 owned or delegated to a maintained loader.
 
-Acceptance: an accepted decision compares an owned loader with a maintained
-loader, records compatibility and rollback, and pins the Rust patch release,
-UEFI crate or alternative, target, NASM, QEMU, firmware, and linker inputs that
-CI can provision. Rust 1.97.1 and `uefi-rs` 0.39 are monitored candidates as of
-2026-08-10 and must be revalidated, including current security advisories, when
-the decision is made.
+Decision: [ADR-0001](../architecture/decisions/0001-uefi-loader-and-boot-handoff.md)
+selects a thin MakopaOS-owned UEFI loader and a versioned, firmware-neutral
+handoff. It pins Rust `1.97.1`, `uefi` `0.39.0`, UEFI `2.11`, the
+`x86_64-unknown-uefi` and `x86_64-unknown-none` targets, the toolchain-bundled
+`rust-lld`, Ubuntu snapshot `20260810T000000Z`, NASM `2.16.01-1build1`,
+`qemu-system-x86` `1:8.2.2+ds-0ubuntu1.18`, and OVMF `2024.02-2ubuntu0.9`.
+
+Acceptance: the accepted decision compares the owned and maintained-loader
+paths, defines entry state and handoff compatibility, records validation and
+rollback conditions, and identifies exact inputs that future CI can provision.
+The direct RustSec package review is recorded as a point-in-time check; OS011
+must audit its committed dependency lockfile.
+
+Non-scope: code, dependencies, CI changes, boot behavior, phase promotion,
+release automation, Secure Boot, and hardware support. OS011 remains Proposed.
 
 ### OS011 — x86-64 kernel entry
 
