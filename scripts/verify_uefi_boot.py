@@ -90,6 +90,8 @@ def qemu_command(
         "-monitor",
         "none",
         "-serial",
+        "null",
+        "-serial",
         "stdio",
         "-no-reboot",
         "-net",

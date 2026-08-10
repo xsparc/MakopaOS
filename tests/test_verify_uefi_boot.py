@@ -47,6 +47,13 @@ class VerifyUefiBootTests(unittest.TestCase):
         self.assertIn("read-only=on", blockdev)
         self.assertIn("virtio-blk-pci,drive=makopa-esp", devices)
 
+        serial_channels = [
+            command[index + 1]
+            for index, argument in enumerate(command)
+            if argument == "-serial"
+        ]
+        self.assertEqual(["null", "stdio"], serial_channels)
+
 
 if __name__ == "__main__":
     unittest.main()

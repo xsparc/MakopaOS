@@ -7,7 +7,7 @@ use core::panic::PanicInfo;
 
 use makopa_boot_contract::BootHandoffV1;
 
-const COM1: u16 = 0x3f8;
+const KERNEL_SERIAL: u16 = 0x2f8;
 const QEMU_EXIT_PORT: u16 = 0xf4;
 const QEMU_SUCCESS: u32 = 0x10;
 const QEMU_FAILURE: u32 = 0x11;
@@ -28,7 +28,7 @@ pub unsafe extern "sysv64" fn kernel_entry(handoff: *const BootHandoffV1) -> ! {
         asm!("cli", "cld", options(nomem, nostack));
     }
 
-    let mut serial = SerialPort::new(COM1);
+    let mut serial = SerialPort::new(KERNEL_SERIAL);
     serial.initialize();
 
     if handoff.is_null() {
@@ -50,7 +50,7 @@ pub unsafe extern "sysv64" fn kernel_entry(handoff: *const BootHandoffV1) -> ! {
 
 #[panic_handler]
 fn panic(_info: &PanicInfo<'_>) -> ! {
-    let mut serial = SerialPort::new(COM1);
+    let mut serial = SerialPort::new(KERNEL_SERIAL);
     serial.initialize();
     let _ = serial.write_str("MakopaOS kernel panic\r\n");
     exit_qemu(QEMU_FAILURE)
@@ -103,7 +103,7 @@ impl SerialPort {
 
     fn read_register(&self, offset: u16) -> u8 {
         let value: u8;
-        // SAFETY: The COM1 UART owns the declared I/O range on the reference
+        // SAFETY: The kernel UART owns the declared I/O range on the reference
         // machine. The instruction reads only the requested device register.
         unsafe {
             asm!("in al, dx", in("dx") self.base + offset, out("al") value, options(nomem, nostack));
@@ -112,7 +112,7 @@ impl SerialPort {
     }
 
     fn write_register(&self, offset: u16, value: u8) {
-        // SAFETY: The COM1 UART owns the declared I/O range on the reference
+        // SAFETY: The kernel UART owns the declared I/O range on the reference
         // machine. The instruction writes only the requested device register.
         unsafe {
             asm!("out dx, al", in("dx") self.base + offset, in("al") value, options(nomem, nostack));
