@@ -70,6 +70,27 @@ class ProjectEvidenceTests(unittest.TestCase):
         self.replace_registry('"boot.asm"', '"notes/generated.md"')
         self.assertIn("reference.untracked", self.finding_codes())
 
+    def test_rejects_intent_to_add_reference(self) -> None:
+        generated = self.repository / "notes" / "intent-to-add.md"
+        generated.parent.mkdir(parents=True)
+        generated.write_text("# Incomplete evidence\n", encoding="utf-8")
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.repository),
+                "add",
+                "--intent-to-add",
+                "--",
+                "notes/intent-to-add.md",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.replace_registry('"boot.asm"', '"notes/intent-to-add.md"')
+        self.assertIn("reference.untracked", self.finding_codes())
+
     def test_rejects_repository_without_tracking_metadata(self) -> None:
         metadata = self.repository / ".git"
         disabled = self.repository / "git-metadata-disabled"

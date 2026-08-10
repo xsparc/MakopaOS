@@ -224,16 +224,18 @@ class ProjectEvidenceChecker:
         return payload
 
     def _load_tracked_paths(self) -> set[str] | None:
-        try:
-            completed = subprocess.run(
-                ["git", "-C", str(self.root), "ls-files", "-z"],
-                check=False,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-            )
-        except OSError:
-            completed = None
-        if completed is None or completed.returncode != 0:
+        tracked_output = self._git_path_query("ls-files", "-z")
+        # Intent-to-add paths appear in ls-files but do not carry staged content.
+        intent_output = self._git_path_query(
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-only",
+            "--diff-filter=A",
+            "--ita-invisible-in-index",
+            "-z",
+        )
+        if tracked_output is None or intent_output is None:
             self._add(
                 "repository.tracking-unavailable",
                 "error",
@@ -242,9 +244,27 @@ class ProjectEvidenceChecker:
                 "Git tracking information is unavailable",
             )
             return None
+        tracked_paths = self._decode_git_paths(tracked_output)
+        intent_to_add_paths = self._decode_git_paths(intent_output)
+        return tracked_paths - intent_to_add_paths
+
+    def _git_path_query(self, *arguments: str) -> bytes | None:
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(self.root), *arguments],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            return None
+        return completed.stdout if completed.returncode == 0 else None
+
+    @staticmethod
+    def _decode_git_paths(output: bytes) -> set[str]:
         return {
             item.decode("utf-8", errors="surrogateescape")
-            for item in completed.stdout.split(b"\0")
+            for item in output.split(b"\0")
             if item
         }
 

@@ -17,7 +17,8 @@ When sources disagree, the order in `CONTRIBUTING.md` applies:
 `project-evidence.toml` is not an additional authority. Repair the authoritative
 source first, then synchronize the registry. Machine-local state, private paths,
 and untracked notes are not valid evidence. Every local evidence path must be
-present in the repository's Git index.
+represented by content in the repository's Git index; intent-to-add placeholders
+do not qualify.
 
 ## Registry records
 
