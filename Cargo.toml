@@ -1,0 +1,26 @@
+[workspace]
+members = [
+    "crates/boot-contract",
+    "crates/kernel-image",
+    "kernel",
+    "loader",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.97.1"
+version = "0.1.0"
+
+[workspace.dependencies]
+makopa-boot-contract = { path = "crates/boot-contract" }
+makopa-kernel-image = { path = "crates/kernel-image" }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+panic = "abort"
