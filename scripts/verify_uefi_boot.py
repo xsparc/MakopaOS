@@ -75,7 +75,7 @@ def run_qemu(
             "-drive",
             f"if=pflash,format=raw,unit=1,file={variables.resolve()}",
             "-drive",
-            f"format=raw,readonly=on,file=fat:{esp.resolve()}",
+            f"format=raw,file=fat:{esp.resolve()}",
             "-device",
             "isa-debug-exit,iobase=0xf4,iosize=0x04",
         ]
