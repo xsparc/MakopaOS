@@ -45,7 +45,10 @@ The kernel will remain independent of model vendors and network services.
 External requests are data, not authority: privileged operations require
 explicit capabilities and produce inspectable evidence.
 
-See [the architecture](docs/architecture/overview.md), [the roadmap](docs/roadmap/implementation-roadmap.md), and [the contribution guide](CONTRIBUTING.md).
+See [the architecture](docs/architecture/overview.md),
+[the roadmap](docs/roadmap/implementation-roadmap.md),
+[the project evidence guide](docs/governance/project-evidence.md), and
+[the contribution guide](CONTRIBUTING.md).
 
 ## License
 

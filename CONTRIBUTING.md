@@ -35,6 +35,8 @@ For the current boot sector:
 
 ```sh
 python -m unittest discover -s tests -v
+python scripts/check_project_evidence.py
+python scripts/check_project_evidence.py --as-of YYYY-MM-DD --strict
 nasm -Wall -Werror -f bin -o boot.bin boot.asm
 python scripts/verify_boot.py boot.bin
 ```
@@ -42,6 +44,11 @@ python scripts/verify_boot.py boot.bin
 Run the narrowest relevant check first, then the complete documented suite.
 Never describe an unexecuted check as passing; record unavailable tools and
 residual risk in the pull request.
+
+Changes to requirements, accepted decisions, work-item state, verification,
+validation, or risk evidence must also update
+`docs/governance/project-evidence.toml`. The registry is a derived index; it
+never overrides the source order above.
 
 ## Repository hygiene
 
