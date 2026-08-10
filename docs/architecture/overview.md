@@ -1,8 +1,9 @@
 # MakopaOS architecture
 
 - Status: Proposed
-- Baseline: `507428c3d98a8b6cea06d6cd9800cb6f0aa002e1`
+- Baseline: `77a3bfd2f1b35a319665a92693f4e405277e50e1`
 - Prepared: 2026-08-10
+- Reviewed: 2026-08-10
 
 ## Vision
 
@@ -28,7 +29,8 @@ created.
 4. **Small trusted core.** New kernel code uses `no_std` Rust, with assembly and
    `unsafe` Rust confined to documented architecture boundaries.
 5. **Deterministic evidence.** Builds and tests produce machine-checkable
-   results. Security-relevant state changes emit structured records.
+   results. Security-relevant state changes emit structured records. External
+   benchmark scores never substitute for repository-native acceptance evidence.
 6. **Protocol independence.** MCP, A2A, WASI, or future protocols may be exposed
    by replaceable user-space gateways, never coupled to the kernel ABI.
 7. **Virtual-first development.** QEMU is the reference platform until a
@@ -97,6 +99,8 @@ Security invariants:
 - capability identifiers cannot be guessed or forged;
 - capabilities are scoped, transferable only by policy, and revocable where
   the underlying resource permits it;
+- delegated authority remains attributable to an initiating principal, task,
+  capability, and approval without storing secret values;
 - network, storage, device, and credential access are absent by default;
 - protocol input and model output never bypass typed validation;
 - high-impact or irreversible operations cross an explicit approval boundary;
@@ -114,19 +118,26 @@ Security invariants:
 
 ## Research basis
 
-The direction reflects developments observed through 2026-08-10:
+The direction was reviewed against developments available on 2026-08-10:
 
 - long-running software agents increase the value of explicit repository
   contracts, fast feedback, and reviewable work units;
-- MCP and A2A standardize tool and peer interoperability above the operating
-  system boundary;
-- prompt injection and confused-deputy attacks make least privilege, approval,
-  and untrusted-input handling core requirements;
+- MCP `2026-07-28` establishes a stateless protocol core with header-based
+  routing, authorization hardening, cacheable discovery, extensions, and a
+  minimum deprecation window;
+- A2A `1.0.1` is the current stable peer-interoperability patch baseline;
+- NIST work on agent identity, delegation, authorization, auditing, and prompt
+  injection reinforces least privilege and explicit effect attribution;
 - UEFI 2.11 is the current firmware baseline for modern x86-64 systems;
+- stable Rust 1.97.1 and `uefi-rs` 0.39 are candidates for the OS010 decision,
+  not dependencies or pins established by this architecture review;
 - memory-safe kernels increasingly isolate unsafe code in a small trusted core;
-- WASI components provide typed host imports suitable for capability mediation;
-- SLSA and OpenSSF guidance favor pinned automation, minimal permissions, and
-  verifiable build provenance.
+- stable WASI 0.3 adds native asynchronous component semantics while preserving
+  typed host imports suitable for capability mediation;
+- coding-agent benchmark audits reinforce the need for local executable
+  acceptance criteria instead of relying on aggregate benchmark claims;
+- SLSA 1.2 and GitHub artifact attestations provide future provenance options,
+  but become actionable only when MakopaOS publishes release artifacts.
 
 These inputs justify the boundary design, not a dependency on any particular
 vendor. Protocol and runtime adoption remains milestone-gated and replaceable.
@@ -144,11 +155,18 @@ vendor. Protocol and runtime adoption remains milestone-gated and replaceable.
 ## References
 
 - [OpenAI: Harness engineering](https://openai.com/index/harness-engineering/)
+- [OpenAI: Coding evaluation audit](https://openai.com/index/separating-signal-from-noise-coding-evaluations/)
+- [GitHub: Agentic workflow security architecture](https://github.blog/ai-and-ml/generative-ai/under-the-hood-security-architecture-of-github-agentic-workflows/)
+- [NIST: AI Agent Standards Initiative](https://www.nist.gov/artificial-intelligence/ai-agent-standards-initiative)
+- [NIST: Software and AI agent identity and authorization](https://www.nccoe.nist.gov/sites/default/files/2026-02/accelerating-the-adoption-of-software-and-ai-agent-identity-and-authorization-concept-paper.pdf)
 - [NIST: AI agent security red-team findings](https://www.nist.gov/blogs/caisi-research-blog/insights-ai-agent-security-large-scale-red-teaming-competition)
-- [Model Context Protocol 2025-11-25 specification](https://modelcontextprotocol.io/specification/2025-11-25/basic)
-- [Agent2Agent protocol 1.0 specification](https://github.com/a2aproject/A2A/blob/main/docs/specification.md)
+- [Model Context Protocol 2026-07-28 release](https://blog.modelcontextprotocol.io/posts/2026-07-28/)
+- [Agent2Agent protocol 1.0.1 release](https://github.com/a2aproject/A2A/releases/tag/v1.0.1)
 - [UEFI specifications](https://uefi.org/specifications)
+- [Rust stable release notes](https://doc.rust-lang.org/stable/releases.html)
+- [`uefi-rs` 0.39](https://docs.rs/crate/uefi/0.39.0)
 - [Asterinas framekernel overview](https://github.com/asterinas/asterinas)
-- [WebAssembly Component Model and WASI](https://component-model.bytecodealliance.org/)
+- [WASI 0.3](https://wasi.dev/releases/wasi-p3)
 - [SLSA 1.2 specification](https://slsa.dev/spec/v1.2/)
+- [GitHub artifact attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
 - [OpenSSF Scorecard](https://github.com/ossf/scorecard)

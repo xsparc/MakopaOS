@@ -1,7 +1,7 @@
 # MakopaOS implementation roadmap
 
 - Status: Active; item states are recorded below
-- Baseline: `507428c3d98a8b6cea06d6cd9800cb6f0aa002e1`
+- Baseline: `77a3bfd2f1b35a319665a92693f4e405277e50e1`
 - Updated: 2026-08-10
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
@@ -49,20 +49,48 @@ without verification evidence; a strict mode is part of CI.
 Non-scope: architecture promotion, research disposition, kernel code, release
 automation, and external publication behavior.
 
+### OS003 — 2026-Q3 standards baseline refresh
+
+Status: Closed
+
+Depends on: OS002
+
+Refresh the architecture's external baselines and promote the accepted research
+dispositions that affect future boot, authority, component, protocol, and
+provenance decisions.
+
+Acceptance:
+
+- architecture references identify MCP `2026-07-28`, A2A `1.0.1`, and stable
+  WASI 0.3 as the current protocol and component-study baselines;
+- OS010 records monitored Rust and UEFI candidates without pinning a toolchain
+  before its decision;
+- OS031, OS032, OS040, and OS051 include the applicable security and
+  version-specific acceptance criteria derived from the accepted research;
+- accepted and monitored findings are review-dated in the project evidence
+  registry, and the dated strict evidence gate passes.
+
+Non-scope: code, dependencies, toolchain installation, boot behavior, CI
+topology, release automation, protocol implementation, and phase promotion.
+
 ## Phase 1: Modern boot handoff
 
 ### OS010 — Toolchain and boot-contract decision
 
 Status: Proposed
 
-Depends on: OS002
+Depends on: OS003
 
 Record the pinned Rust, NASM, QEMU, firmware, target, and linker contract. Define
 the versioned x86-64 boot handoff and decide whether the initial UEFI loader is
 owned or delegated to a maintained loader.
 
-Acceptance: an accepted decision describes alternatives, compatibility, update
-policy, and rollback; CI can provision the pinned toolchain.
+Acceptance: an accepted decision compares an owned loader with a maintained
+loader, records compatibility and rollback, and pins the Rust patch release,
+UEFI crate or alternative, target, NASM, QEMU, firmware, and linker inputs that
+CI can provision. Rust 1.97.1 and `uefi-rs` 0.39 are monitored candidates as of
+2026-08-10 and must be revalidated, including current security advisories, when
+the decision is made.
 
 ### OS011 — x86-64 kernel entry
 
@@ -147,7 +175,8 @@ Introduce a user-space supervisor that launches tasks from a declared capability
 manifest and pauses high-impact requests for approval.
 
 Acceptance: allow, deny, expiry, replay, and approval-timeout paths have
-deterministic tests.
+deterministic tests; each decision binds the initiating principal, task,
+requested capability, and resulting authority without recording credentials.
 
 ### OS032 — Structured effect log
 
@@ -159,7 +188,8 @@ Record requested, approved, denied, completed, and failed effects without secret
 payloads.
 
 Acceptance: records are ordered, schema-versioned, bounded, and exportable over
-a read-only channel.
+a read-only channel; effect and approval records preserve principal, task, and
+capability attribution without secret payloads.
 
 ## Phase 4: Portable isolated workloads
 
@@ -172,8 +202,10 @@ Depends on: OS032
 Evaluate a minimal component ABI against WASI 0.2 and 0.3 without committing the
 kernel ABI to either version.
 
-Acceptance: a decision compares footprint, async behavior, capability mapping,
-toolchain maturity, and migration cost.
+Acceptance: a decision compares stable WASI 0.3 with the maintained WASI 0.2
+baseline across footprint, native async behavior, capability mapping, runtime
+and toolchain maturity, migration cost, and rollback. Neither version becomes a
+kernel ABI.
 
 ### OS041 — Sandboxed component host
 
@@ -205,11 +237,14 @@ Status: Proposed
 
 Depends on: OS050
 
-Compare MCP and A2A adapters as user-space services. Adopt only stable protocol
-subsets with clear authentication, task-lifecycle, and cancellation behavior.
+Compare MCP and A2A adapters as user-space services, using MCP `2026-07-28` and
+A2A `1.0.1` as the initial study baselines. Adopt only stable protocol subsets
+with clear identity, authorization, task-lifecycle, and cancellation behavior.
 
-Acceptance: an accepted decision identifies the supported protocol versions,
-threat boundary, conformance tests, and removal path.
+Acceptance: an accepted decision identifies exact supported versions; maps MCP
+stateless routing, authorization, discovery, and task extensions plus A2A task
+states and bindings onto local authority; defines delegation and prompt-
+injection boundaries; and specifies conformance tests, migration, and removal.
 
 ## Delivery gate
 
@@ -221,3 +256,7 @@ A work item closes only when:
 - architecture, roadmap, tests, and operator documentation agree;
 - security limitations and skipped checks are stated;
 - the pull request remains reviewable and independently reversible.
+
+A future release-producing work item must decide provenance and verification
+against SLSA 1.2 and then-current artifact-attestation support. OS003 does not
+enable publishing or broaden workflow permissions.
