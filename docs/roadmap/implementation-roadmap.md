@@ -33,7 +33,7 @@ Non-scope: boot behavior changes, UEFI code, kernel scaffolding, releases.
 
 ### OS002 — Project evidence gate
 
-Status: In progress
+Status: Closed
 
 Depends on: OS001
 
