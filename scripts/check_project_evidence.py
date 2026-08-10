@@ -7,6 +7,7 @@ import argparse
 import ast
 import json
 import re
+import subprocess
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -29,6 +30,11 @@ _GITHUB_APPROVAL = re.compile(
     r"(?:#(?:issuecomment-[1-9][0-9]*|discussion_r[1-9][0-9]*|"
     r"pullrequestreview-[1-9][0-9]*))?$"
 )
+_INLINE_ACCEPTED_STATUS = re.compile(
+    r"(?im)^\s*(?:-\s*)?(?:\*\*)?Status:(?:\*\*)?\s*accepted\s*$"
+)
+_STATUS_HEADING = re.compile(r"(?i)^\s*#{1,6}\s+Status(?:\s+#+)?\s*$")
+_ACCEPTED_STATUS_VALUE = re.compile(r"(?i)^\s*(?:\*\*|__)?Accepted(?:\*\*|__)?\s*$")
 
 _TOP_LEVEL_FIELDS = {
     "schema_version",
@@ -127,11 +133,14 @@ class ProjectEvidenceChecker:
         self.objective_ids: set[str] = set()
         self.requirement_ids: set[str] = set()
         self.design_paths: set[str] = set()
+        self.tracked_paths: set[str] | None = None
 
     def check(self) -> EvidenceCheckV1:
         payload = self._load_registry()
         if payload is None:
             return self._result({})
+
+        self.tracked_paths = self._load_tracked_paths()
 
         self._unknown_fields(payload, _TOP_LEVEL_FIELDS, "registry", "registry")
         if payload.get("schema_version") != SCHEMA_VERSION:
@@ -213,6 +222,51 @@ class ProjectEvidenceChecker:
             self._add("schema.type", "error", "registry", "registry", "root must be a table")
             return None
         return payload
+
+    def _load_tracked_paths(self) -> set[str] | None:
+        tracked_output = self._git_path_query("ls-files", "-z")
+        # Intent-to-add paths appear in ls-files but do not carry staged content.
+        intent_output = self._git_path_query(
+            "diff",
+            "--no-ext-diff",
+            "--no-textconv",
+            "--name-only",
+            "--diff-filter=A",
+            "--ita-invisible-in-index",
+            "-z",
+        )
+        if tracked_output is None or intent_output is None:
+            self._add(
+                "repository.tracking-unavailable",
+                "error",
+                "registry",
+                "repository",
+                "Git tracking information is unavailable",
+            )
+            return None
+        tracked_paths = self._decode_git_paths(tracked_output)
+        intent_to_add_paths = self._decode_git_paths(intent_output)
+        return tracked_paths - intent_to_add_paths
+
+    def _git_path_query(self, *arguments: str) -> bytes | None:
+        try:
+            completed = subprocess.run(
+                ["git", "-C", str(self.root), *arguments],
+                check=False,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+            )
+        except OSError:
+            return None
+        return completed.stdout if completed.returncode == 0 else None
+
+    @staticmethod
+    def _decode_git_paths(output: bytes) -> set[str]:
+        return {
+            item.decode("utf-8", errors="surrogateescape")
+            for item in output.split(b"\0")
+            if item
+        }
 
     def _result(self, counts: Mapping[str, int]) -> EvidenceCheckV1:
         findings = tuple(sorted(self.findings))
@@ -600,6 +654,15 @@ class ProjectEvidenceChecker:
                 f"referenced file does not exist: {path_text}",
             )
             return
+        if self.tracked_paths is not None and path_text not in self.tracked_paths:
+            self._add(
+                "reference.untracked",
+                "error",
+                record_id,
+                field,
+                f"referenced file is not tracked: {path_text}",
+            )
+            return
         if "::" in reference:
             symbol = reference.split("::", 1)[1]
             if not self._python_symbol_exists(resolved, symbol):
@@ -682,10 +745,7 @@ class ProjectEvidenceChecker:
                 text = path.read_text(encoding="utf-8")
             except (OSError, UnicodeError):
                 continue
-            if re.search(
-                r"(?im)^\s*(?:-\s*)?(?:\*\*)?Status:(?:\*\*)?\s*accepted\s*$",
-                text,
-            ):
+            if self._decision_is_accepted(text):
                 relative = path.relative_to(self.root).as_posix()
                 if relative not in self.design_paths:
                     self._add(
@@ -695,6 +755,22 @@ class ProjectEvidenceChecker:
                         relative,
                         "accepted decision is not referenced by a requirement",
                     )
+
+    @staticmethod
+    def _decision_is_accepted(text: str) -> bool:
+        if _INLINE_ACCEPTED_STATUS.search(text):
+            return True
+        lines = text.splitlines()
+        for index, line in enumerate(lines):
+            if not _STATUS_HEADING.fullmatch(line):
+                continue
+            for candidate in lines[index + 1 :]:
+                if not candidate.strip():
+                    continue
+                if _ACCEPTED_STATUS_VALUE.fullmatch(candidate):
+                    return True
+                break
+        return False
 
 
 def check_project_evidence(

@@ -16,7 +16,9 @@ When sources disagree, the order in `CONTRIBUTING.md` applies:
 
 `project-evidence.toml` is not an additional authority. Repair the authoritative
 source first, then synchronize the registry. Machine-local state, private paths,
-and untracked notes are not valid evidence.
+and untracked notes are not valid evidence. Every local evidence path must be
+represented by content in the repository's Git index; intent-to-add placeholders
+do not qualify.
 
 ## Registry records
 
@@ -53,8 +55,10 @@ Without `--strict`, overdue reviews produce a warning and exit successfully;
 strict mode treats warnings as a failed closure gate.
 
 The checker rejects malformed records, unknown IDs, unsafe or missing local
-references, missing Markdown anchors or Python symbols, unindexed accepted
-decisions, and incomplete evidence for implemented requirements.
+references, untracked files, missing Markdown anchors or Python symbols,
+unindexed accepted decisions, and incomplete evidence for implemented
+requirements. Accepted decisions may express their status as `Status: Accepted`
+or as a `Status` Markdown heading whose next non-empty line is `Accepted`.
 
 ## Maintenance
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import io
 import shutil
+import subprocess
 import tempfile
 import unittest
 from datetime import date
@@ -23,6 +24,18 @@ class ProjectEvidenceTests(unittest.TestCase):
             ROOT,
             self.repository,
             ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc", "boot.bin"),
+        )
+        subprocess.run(
+            ["git", "init", "--quiet", str(self.repository)],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        subprocess.run(
+            ["git", "-C", str(self.repository), "add", "--all"],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
         )
 
     def tearDown(self) -> None:
@@ -49,6 +62,43 @@ class ProjectEvidenceTests(unittest.TestCase):
     def test_rejects_missing_reference(self) -> None:
         self.replace_registry('"boot.asm"', '"missing/boot.asm"')
         self.assertIn("reference.missing", self.finding_codes())
+
+    def test_rejects_untracked_reference(self) -> None:
+        generated = self.repository / "notes" / "generated.md"
+        generated.parent.mkdir(parents=True)
+        generated.write_text("# Generated evidence\n", encoding="utf-8")
+        self.replace_registry('"boot.asm"', '"notes/generated.md"')
+        self.assertIn("reference.untracked", self.finding_codes())
+
+    def test_rejects_intent_to_add_reference(self) -> None:
+        generated = self.repository / "notes" / "intent-to-add.md"
+        generated.parent.mkdir(parents=True)
+        generated.write_text("# Incomplete evidence\n", encoding="utf-8")
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(self.repository),
+                "add",
+                "--intent-to-add",
+                "--",
+                "notes/intent-to-add.md",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        self.replace_registry('"boot.asm"', '"notes/intent-to-add.md"')
+        self.assertIn("reference.untracked", self.finding_codes())
+
+    def test_rejects_repository_without_tracking_metadata(self) -> None:
+        metadata = self.repository / ".git"
+        disabled = self.repository / "git-metadata-disabled"
+        metadata.rename(disabled)
+        try:
+            self.assertIn("repository.tracking-unavailable", self.finding_codes())
+        finally:
+            disabled.rename(metadata)
 
     def test_rejects_unsafe_reference(self) -> None:
         self.replace_registry('"boot.asm"', '"../boot.asm"')
@@ -83,6 +133,21 @@ class ProjectEvidenceTests(unittest.TestCase):
         decision.parent.mkdir(parents=True, exist_ok=True)
         decision.write_text(
             "# Test decision\n\n- **Status:** Accepted\n",
+            encoding="utf-8",
+        )
+        self.assertIn("traceability.unindexed-decision", self.finding_codes())
+
+    def test_rejects_unindexed_heading_status_accepted_decision(self) -> None:
+        decision = (
+            self.repository
+            / "docs"
+            / "architecture"
+            / "decisions"
+            / "0099-heading-status.md"
+        )
+        decision.parent.mkdir(parents=True, exist_ok=True)
+        decision.write_text(
+            "# Test decision\n\n## Status\n\nAccepted\n",
             encoding="utf-8",
         )
         self.assertIn("traceability.unindexed-decision", self.finding_codes())
