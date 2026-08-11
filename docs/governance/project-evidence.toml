@@ -75,14 +75,14 @@ risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures", "
 [[requirements]]
 id = "REQ-PHYSICAL-FRAMES"
 statement = "Allocate and recycle page-aligned physical frames only from kernel-owned copies of validated usable ranges."
-status = "planned"
+status = "implemented"
 objective_ids = ["OBJ-BOOT-REAL", "OBJ-TRACEABLE-CHANGE"]
 roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os013-frame-ownership-and-early-allocation-decision", "docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"]
 design_refs = ["docs/architecture/overview.md#kernel-core", "docs/architecture/decisions/0002-frame-ownership-and-early-allocation.md"]
-implementation_refs = []
-verification_refs = []
-validation_refs = []
-risk_refs = ["docs/security/threat-model.md#required-controls"]
+implementation_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "crates/frame-allocator/Cargo.toml", "crates/frame-allocator/src/lib.rs", "kernel/Cargo.toml", "kernel/linker.ld", "kernel/src/main.rs", "scripts/verify_uefi_boot.py"]
+verification_refs = ["crates/frame-allocator/src/lib.rs", "tests/test_verify_uefi_boot.py"]
+validation_refs = ["docs/development/testing.md#repository-and-contract-gates", "docs/development/testing.md#uefi-kernel-entry-gate"]
+risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures", "docs/security/threat-model.md#required-controls"]
 
 [[requirements]]
 id = "REQ-EXPLICIT-CAPABILITIES"
@@ -189,6 +189,16 @@ roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os013-frame-ownership-an
 approval_ref = "conversation:2026-08-11-approve-os013"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os013-frame-ownership-and-early-allocation-decision"]
 evidence_refs = ["docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md", "docs/architecture/decisions/0002-frame-ownership-and-early-allocation.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
+
+[[work_items]]
+id = "OS020-PHYSICAL-FRAMES"
+title = "Implement the kernel-owned physical frame allocator"
+status = "closed"
+requirement_ids = ["REQ-PHYSICAL-FRAMES"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"]
+approval_ref = "conversation:2026-08-11-approve-os020"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"]
+evidence_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "CONTRIBUTING.md", "README.md", "crates/boot-contract/src/validate.rs", "crates/frame-allocator/Cargo.toml", "crates/frame-allocator/src/lib.rs", "docs/development/testing.md", "docs/security/threat-model.md", "kernel/Cargo.toml", "kernel/linker.ld", "kernel/src/main.rs", "scripts/verify_uefi_boot.py", "tests/test_verify_uefi_boot.py"]
 
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
@@ -299,6 +309,16 @@ observed_on = "2026-08-11"
 reviewed_on = "2026-08-11"
 review_due = "2026-09-11"
 decision_ref = "docs/architecture/decisions/0002-frame-ownership-and-early-allocation.md"
+
+[[research_decisions]]
+id = "RSH-OS020-STATIC-STORAGE-2026Q3"
+finding = "Rust 2024 rejects references to static mut, so OS020 uses a narrow immutable UnsafeCell wrapper for its single-threaded kernel allocator; Kani 0.67 remains outside this slice because its UnsafeCell support is partial and does not verify assembly, aliasing, or data races."
+disposition = "adopted"
+source_urls = ["https://doc.rust-lang.org/nightly/edition-guide/rust-2024/static-mut-references.html", "https://doc.rust-lang.org/core/cell/struct.UnsafeCell.html", "https://model-checking.github.io/kani/rust-feature-support.html", "https://github.com/model-checking/kani/releases/tag/kani-0.67.0"]
+observed_on = "2026-08-11"
+reviewed_on = "2026-08-11"
+review_due = "2026-09-11"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"
 
 [[research_decisions]]
 id = "RSH-OS012-FRAMEBUFFER-2026Q3"

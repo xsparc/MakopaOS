@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "crates/boot-contract",
+    "crates/frame-allocator",
     "crates/kernel-image",
     "kernel",
     "loader",
@@ -15,6 +16,7 @@ version = "0.1.0"
 
 [workspace.dependencies]
 makopa-boot-contract = { path = "crates/boot-contract" }
+makopa-frame-allocator = { path = "crates/frame-allocator" }
 makopa-kernel-image = { path = "crates/kernel-image" }
 
 [profile.dev]

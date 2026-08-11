@@ -21,6 +21,7 @@ SECTIONS
     .data :
     {
         *(.data .data.*)
+        *(.got .got.*)
     }
 
     . = ALIGN(4096);

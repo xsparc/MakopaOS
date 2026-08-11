@@ -12,7 +12,9 @@ architecture nevertheless treats isolation claims as testable contracts.
 - external content cannot grant authority;
 - accepted effects are attributable to a task and capability without exposing
   secret values;
-- build inputs and generated images are reviewable and reproducible.
+- build inputs and generated images are reviewable and reproducible;
+- a physical frame is not allocated twice unless its prior owner successfully
+  returns it to the allocator.
 
 ## Initial adversaries and failures
 
@@ -21,6 +23,8 @@ architecture nevertheless treats isolation claims as testable contracts.
   segments;
 - malformed, overlapping, overflowing, or incorrectly classified boot memory
   regions and framebuffer ranges;
+- duplicate, unaligned, unmanaged, or overflowing frame returns and allocator
+  fragmentation that exhausts bounded metadata;
 - firmware protocol handles, allocations, or references used after boot
   services exit;
 - invalid pointers, lengths, handles, and IPC messages;
@@ -40,6 +44,12 @@ architecture nevertheless treats isolation claims as testable contracts.
   entry;
 - bounded final-map normalization that keeps live kernel and framebuffer pages
   outside usable memory and defers loader-page reclamation;
+- kernel-owned managed and free extent tables seeded only from exact
+  `MEMORY_USABLE` records, with no retained handoff reference;
+- checked lowest-address allocation and state-preserving rejection of invalid
+  or capacity-exceeding frame returns;
+- one reviewed `UnsafeCell` singleton boundary while interrupts remain disabled
+  and no scheduler or reentrant allocator caller exists;
 - deny-by-default capability manifests;
 - typed validation at every privilege and protocol boundary;
 - bounded queues, timeouts, cancellation, and replay protection;

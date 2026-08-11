@@ -2,6 +2,7 @@
 #![no_std]
 
 use core::arch::asm;
+use core::cell::UnsafeCell;
 use core::fmt::{self, Write};
 use core::mem::align_of;
 use core::panic::PanicInfo;
@@ -10,11 +11,28 @@ use core::slice;
 use makopa_boot_contract::{
     BootHandoffV1, FRAMEBUFFER_PRESENT, MemoryRegionV1, validate_handoff, validate_handoff_header,
 };
+use makopa_frame_allocator::FrameAllocator;
 
 const KERNEL_SERIAL: u16 = 0x3f8;
 const QEMU_EXIT_PORT: u16 = 0xf4;
 const QEMU_SUCCESS: u32 = 0x10;
 const QEMU_FAILURE: u32 = 0x11;
+
+struct KernelFrameAllocator(UnsafeCell<FrameAllocator>);
+
+impl KernelFrameAllocator {
+    const fn new() -> Self {
+        Self(UnsafeCell::new(FrameAllocator::new()))
+    }
+}
+
+// SAFETY: OS020 has one kernel entry path, keeps interrupts disabled, and has
+// no scheduler or reentrant allocator caller. Later concurrency must replace
+// this single-owner boundary with explicit synchronization.
+unsafe impl Sync for KernelFrameAllocator {}
+
+#[unsafe(link_section = ".bss.frame_allocator")]
+static FRAME_ALLOCATOR: KernelFrameAllocator = KernelFrameAllocator::new();
 
 #[unsafe(no_mangle)]
 #[unsafe(link_section = ".text.kernel_entry")]
@@ -62,12 +80,42 @@ pub unsafe extern "sysv64" fn kernel_entry(handoff: *const BootHandoffV1) -> ! {
         exit_qemu(QEMU_FAILURE);
     }
 
+    // SAFETY: kernel_entry is the only execution path, interrupts remain
+    // disabled, and no reference to this singleton exists elsewhere. The
+    // allocator copies usable extents and retains no reference to `regions`.
+    let frame_allocator = unsafe { &mut *FRAME_ALLOCATOR.0.get() };
+    if frame_allocator.initialize(regions).is_err() {
+        let _ = serial.write_str("MakopaOS boot error: frame allocator init\r\n");
+        exit_qemu(QEMU_FAILURE);
+    }
+    let Ok(frame_a) = frame_allocator.allocate_frame() else {
+        let _ = serial.write_str("MakopaOS boot error: frame allocation\r\n");
+        exit_qemu(QEMU_FAILURE);
+    };
+    let Ok(frame_b) = frame_allocator.allocate_frame() else {
+        let _ = serial.write_str("MakopaOS boot error: frame allocation\r\n");
+        exit_qemu(QEMU_FAILURE);
+    };
+    if frame_b == frame_a || frame_allocator.free_frame(frame_a).is_err() {
+        let _ = serial.write_str("MakopaOS boot error: frame recycle\r\n");
+        exit_qemu(QEMU_FAILURE);
+    }
+    let Ok(reused) = frame_allocator.allocate_frame() else {
+        let _ = serial.write_str("MakopaOS boot error: frame recycle\r\n");
+        exit_qemu(QEMU_FAILURE);
+    };
+    if reused != frame_a {
+        let _ = serial.write_str("MakopaOS boot error: frame reuse mismatch\r\n");
+        exit_qemu(QEMU_FAILURE);
+    }
+
     let _ = serial.write_str("MakopaOS 0.1.0\r\n");
     if handoff.header.flags & FRAMEBUFFER_PRESENT != 0 {
         let _ = serial.write_str("MakopaOS handoff v1 ok framebuffer\r\n");
     } else {
         let _ = serial.write_str("MakopaOS handoff v1 ok no-framebuffer\r\n");
     }
+    let _ = serial.write_str("MakopaOS frames v1 ok reuse\r\n");
     exit_qemu(QEMU_SUCCESS)
 }
 

@@ -189,7 +189,7 @@ decision.
 
 ### OS020 — Physical frame allocator
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS013
 
@@ -205,6 +205,18 @@ left/right/two-sided coalescing, and state-preserving rejection of duplicate,
 unaligned, unmanaged, overflowing, and capacity-exceeding frees. QEMU allocates
 frames A and B, frees A, reallocates A, and emits the exact terminal record
 `MakopaOS frames v1 ok reuse`.
+
+Delivery: a `no_std` library with only the local boot-contract dependency owns
+two fixed 1,024-entry extent tables and validates the complete source map in a
+first pass before filling state in place. The non-cloneable allocator reports
+distinct initialization, allocation, and free errors and preserves state on
+rejected operations. The kernel places one immutable wrapper around the
+allocator in `.bss`, confines interior mutability to a documented `UnsafeCell`
+boundary, and initializes it only after handoff validation. Host tests include
+a reference model, fragmentation and coalescing cases, failed-reinitialization
+checks, source-map lifetime independence, and a 40 KiB metadata ceiling. The
+existing CI job runs the library tests and extends the pinned QEMU transcript
+without adding a job, permission, tool, or third-party dependency.
 
 Non-scope: loader-reclaimable memory, multi-frame allocation, dynamic allocator
 metadata, page-table or stack changes, synchronization, interrupts, releases,
