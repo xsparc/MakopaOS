@@ -1,0 +1,17 @@
+[package]
+name = "makopa-loader"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+makopa-boot-contract.workspace = true
+makopa-kernel-image.workspace = true
+uefi = { version = "=0.39.0", default-features = false, features = ["alloc", "global_allocator"] }
+
+[[bin]]
+name = "makopa-loader"
+path = "src/main.rs"
+test = false
+bench = false

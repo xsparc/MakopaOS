@@ -10,22 +10,45 @@ permissions:
   contents: read
 
 jobs:
-  boot-sector:
-    name: Boot sector
+  boot-gates:
+    name: Boot gates
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 20
 
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
-      - name: Install NASM
+      - name: Install pinned system packages
         run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends --yes nasm
+          sudo apt-get \
+            -o Dir::Etc::sourcelist="$GITHUB_WORKSPACE/ci/ubuntu-snapshot.sources" \
+            -o Dir::Etc::sourceparts=- \
+            update
+          sudo apt-get \
+            -o Dir::Etc::sourcelist="$GITHUB_WORKSPACE/ci/ubuntu-snapshot.sources" \
+            -o Dir::Etc::sourceparts=- \
+            install --no-install-recommends --yes \
+            nasm=2.16.01-1build1 \
+            ovmf=2024.02-2ubuntu0.9 \
+            qemu-system-x86=1:8.2.2+ds-0ubuntu1.18
+
+      - name: Install pinned Rust targets
+        run: |
+          rustup toolchain install 1.97.1 \
+            --profile minimal \
+            --component rustfmt \
+            --target x86_64-unknown-none,x86_64-unknown-uefi
 
       - name: Run unit tests
         run: python3 -m unittest discover -s tests -v
+
+      - name: Test boot contracts
+        run: |
+          cargo +1.97.1 fmt --all -- --check
+          cargo +1.97.1 test --locked \
+            -p makopa-boot-contract \
+            -p makopa-kernel-image
 
       - name: Check project evidence
         run: |
@@ -37,3 +60,18 @@ jobs:
 
       - name: Verify boot-sector contract
         run: python3 scripts/verify_boot.py boot.bin
+
+      - name: Build UEFI boot directory
+        run: python3 scripts/build_uefi.py
+
+      - name: Verify UEFI serial boot
+        run: |
+          python3 scripts/verify_uefi_boot.py \
+            --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+            --ovmf-vars /usr/share/OVMF/OVMF_VARS_4M.fd \
+            --esp build/esp
+
+      - name: Audit locked Rust dependencies
+        run: |
+          cargo +1.97.1 install cargo-audit --version 0.22.2 --locked
+          cargo +1.97.1 audit --deny warnings

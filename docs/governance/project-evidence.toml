@@ -12,8 +12,8 @@ source_priority = [
 evidence_is_authoritative = false
 
 [review]
-last_reviewed = "2026-08-10"
-review_due = "2026-09-10"
+last_reviewed = "2026-08-11"
+review_due = "2026-09-11"
 
 [[objectives]]
 id = "OBJ-BOOT-REAL"
@@ -45,7 +45,7 @@ roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os001-boot-sector-verifi
 design_refs = ["docs/architecture/overview.md#boot-boundary"]
 implementation_refs = ["boot.asm", "scripts/verify_boot.py"]
 verification_refs = ["tests/test_verify_boot.py"]
-validation_refs = ["docs/development/testing.md#boot-sector-gate"]
+validation_refs = ["docs/development/testing.md#legacy-boot-sector-gate"]
 risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures"]
 
 [[requirements]]
@@ -63,14 +63,14 @@ risk_refs = ["docs/security/threat-model.md#required-controls"]
 [[requirements]]
 id = "REQ-MODERN-BOOT"
 statement = "Boot a memory-safe x86-64 kernel through a versioned modern firmware handoff."
-status = "planned"
+status = "implemented"
 objective_ids = ["OBJ-BOOT-REAL"]
-roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision", "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"]
 design_refs = ["docs/architecture/overview.md#boot-boundary", "docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md"]
-implementation_refs = []
-verification_refs = []
-validation_refs = []
-risk_refs = []
+implementation_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "crates/boot-contract/src/lib.rs", "crates/kernel-image/src/lib.rs", "kernel/src/main.rs", "kernel/linker.ld", "loader/src/main.rs", "rust-toolchain.toml", "scripts/build_uefi.py", "scripts/verify_uefi_boot.py"]
+verification_refs = ["crates/boot-contract/src/lib.rs", "crates/kernel-image/src/lib.rs", "tests/test_build_uefi.py", "tests/test_verify_uefi_boot.py"]
+validation_refs = ["docs/development/testing.md#uefi-kernel-entry-gate"]
+risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures", "docs/security/threat-model.md#required-controls"]
 
 [[requirements]]
 id = "REQ-EXPLICIT-CAPABILITIES"
@@ -148,6 +148,16 @@ approval_ref = "conversation:2026-08-10-approve-os010"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision"]
 evidence_refs = ["docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
 
+[[work_items]]
+id = "OS011-UEFI-KERNEL-ENTRY"
+title = "Boot a freestanding x86-64 kernel through UEFI"
+status = "closed"
+requirement_ids = ["REQ-MODERN-BOOT"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"]
+approval_ref = "conversation:2026-08-11-approve-os011"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"]
+evidence_refs = [".github/workflows/ci.yml", "Cargo.lock", "crates/boot-contract/src/lib.rs", "crates/kernel-image/src/lib.rs", "docs/development/testing.md", "kernel/src/main.rs", "loader/src/main.rs", "scripts/build_uefi.py", "scripts/verify_uefi_boot.py", "tests/test_build_uefi.py", "tests/test_verify_uefi_boot.py"]
+
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
 finding = "MCP 2026-07-28 and A2A 1.0.1 are the current stable study baselines for replaceable user-space protocol gateways."
@@ -207,6 +217,36 @@ observed_on = "2026-08-10"
 reviewed_on = "2026-08-10"
 review_due = "2026-09-10"
 decision_ref = "docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md"
+
+[[research_decisions]]
+id = "RSH-OS011-UEFI-LIFETIME-2026Q3"
+finding = "uefi 0.39 invalidates boot-services protocols and its global allocator after ExitBootServices, so the OS011 loader drops protocol guards and heap-backed values before the one-way transition."
+disposition = "adopted"
+source_urls = ["https://docs.rs/uefi/0.39.0/uefi/boot/fn.exit_boot_services.html"]
+observed_on = "2026-08-11"
+reviewed_on = "2026-08-11"
+review_due = "2026-09-11"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"
+
+[[research_decisions]]
+id = "RSH-OS011-BOOT-HARNESS-2026Q3"
+finding = "QEMU read-only virtual FAT directories provide an image-tool-free ESP for the bounded smoke test, while executable device inspection confirms the pinned binary exposes isa-debug-exit before boot."
+disposition = "adopted"
+source_urls = ["https://www.qemu.org/docs/master/system/images.html#virtual-fat-disk-images"]
+observed_on = "2026-08-11"
+reviewed_on = "2026-08-11"
+review_due = "2026-09-11"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"
+
+[[research_decisions]]
+id = "RSH-OS011-DEPENDENCY-AUDIT-2026Q3"
+finding = "cargo-audit 0.22.2 is the pinned OS011 scanner for checking the committed Rust dependency lockfile against the RustSec advisory database."
+disposition = "adopted"
+source_urls = ["https://github.com/rustsec/rustsec/releases/tag/cargo-audit%2Fv0.22.2"]
+observed_on = "2026-08-11"
+reviewed_on = "2026-08-11"
+review_due = "2026-09-11"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"
 
 [[research_decisions]]
 id = "RSH-SUPPLY-CHAIN-2026Q3"

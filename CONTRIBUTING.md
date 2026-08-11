@@ -31,15 +31,26 @@ the architecture require an accepted decision record before implementation.
 
 ## Validation
 
-For the current boot sector:
+For the complete current boot boundary:
 
 ```sh
 python -m unittest discover -s tests -v
 python scripts/check_project_evidence.py
 python scripts/check_project_evidence.py --as-of YYYY-MM-DD --strict
+cargo +1.97.1 fmt --all -- --check
+cargo +1.97.1 test --locked -p makopa-boot-contract -p makopa-kernel-image
+cargo +1.97.1 audit --deny warnings
 nasm -Wall -Werror -f bin -o boot.bin boot.asm
 python scripts/verify_boot.py boot.bin
+python scripts/build_uefi.py
+python scripts/verify_uefi_boot.py \
+  --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd \
+  --ovmf-vars /usr/share/OVMF/OVMF_VARS_4M.fd \
+  --esp build/esp
 ```
+
+The audit command assumes the CI-pinned `cargo-audit` `0.22.2`. See the testing
+guide for the exact system-package baseline and gate semantics.
 
 Run the narrowest relevant check first, then the complete documented suite.
 Never describe an unexecuted check as passing; record unavailable tools and

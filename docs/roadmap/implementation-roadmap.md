@@ -2,7 +2,7 @@
 
 - Status: Active; item states are recorded below
 - Baseline: `7c8c62bbe2cf548b7a92ef52b9cc9a98242c7a62`
-- Updated: 2026-08-10
+- Updated: 2026-08-11
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
 items describe sequence, not implementation authority. Each item should ship in
@@ -99,11 +99,12 @@ The direct RustSec package review is recorded as a point-in-time check; OS011
 must audit its committed dependency lockfile.
 
 Non-scope: code, dependencies, CI changes, boot behavior, phase promotion,
-release automation, Secure Boot, and hardware support. OS011 remains Proposed.
+release automation, Secure Boot, and hardware support. OS011 implements this
+accepted baseline without changing the decision.
 
 ### OS011 — x86-64 kernel entry
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS010
 
@@ -112,6 +113,19 @@ console, and halt cleanly.
 
 Acceptance: QEMU exits through a deterministic test device after matching the
 expected serial transcript; the legacy BIOS sector remains buildable.
+
+Delivery: the pinned Rust workspace builds a MakopaOS-owned UEFI loader and
+freestanding kernel. The loader validates bounded ELF64 load segments, releases
+all firmware protocols and heap-backed values before `ExitBootServices`, and
+enters the kernel with the ADR-0001 System V ABI. CI boots a read-only VVFAT ESP
+under the pinned QEMU and OVMF packages, verifies `isa-debug-exit` support,
+requires the exact `MakopaOS 0.1.0` serial transcript, audits `Cargo.lock` with
+`cargo-audit` `0.22.2`, and preserves the legacy BIOS gate.
+
+Non-scope: populated memory-map or framebuffer handoff fields, allocators,
+interrupt handling, hardware drivers, Secure Boot, releases, and phase
+promotion. These boundaries remain assigned to later work, beginning with
+OS012.
 
 ### OS012 — Boot handoff validation
 

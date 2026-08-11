@@ -17,6 +17,10 @@ architecture nevertheless treats isolation claims as testable contracts.
 ## Initial adversaries and failures
 
 - malformed or hostile binaries;
+- overlapping, truncated, misaligned, or incorrectly addressed kernel ELF
+  segments;
+- firmware protocol handles, allocations, or references used after boot
+  services exit;
 - invalid pointers, lengths, handles, and IPC messages;
 - confused-deputy requests through a privileged service;
 - replayed, expired, or duplicated approvals;
@@ -27,6 +31,11 @@ architecture nevertheless treats isolation claims as testable contracts.
 ## Required controls
 
 - memory-safe implementation outside narrow reviewed architecture shims;
+- bounded ELF parsing before allocation, with an executable entry constrained
+  to a loaded segment at or above 1 MiB;
+- no live firmware protocols or heap-backed values across `ExitBootServices`;
+- a versioned, fixed-layout handoff held in loader-owned storage until kernel
+  entry;
 - deny-by-default capability manifests;
 - typed validation at every privilege and protocol boundary;
 - bounded queues, timeouts, cancellation, and replay protection;
