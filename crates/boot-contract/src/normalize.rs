@@ -12,6 +12,7 @@ pub struct MemoryRegionOverride {
     pub physical_start: u64,
     pub page_count: u64,
     pub kind: u32,
+    pub require_full_coverage: bool,
 }
 
 impl MemoryRegionOverride {
@@ -19,6 +20,7 @@ impl MemoryRegionOverride {
         physical_start: 0,
         page_count: 0,
         kind: 0,
+        require_full_coverage: false,
     };
 }
 
@@ -54,7 +56,6 @@ where
     let mut previous_source_start = None;
     let mut previous_source_end = None;
     let mut override_index = 0;
-    let mut override_consumed = overrides.first().map_or(0, |region| region.physical_start);
     let mut saw_source = false;
 
     for source in sources {
@@ -77,13 +78,7 @@ where
             let replacement_end = region_end(replacement.physical_start, replacement.page_count)?;
 
             if replacement_end <= cursor {
-                if override_consumed != replacement_end {
-                    return Err(NormalizeError::OverrideOutsideSource);
-                }
                 override_index += 1;
-                override_consumed = overrides
-                    .get(override_index)
-                    .map_or(0, |region| region.physical_start);
                 continue;
             }
             if replacement.physical_start >= source_end {
@@ -91,21 +86,14 @@ where
             }
 
             let replacement_start = replacement.physical_start.max(cursor);
-            if override_consumed < replacement_start {
-                return Err(NormalizeError::OverrideOutsideSource);
-            }
             writer.emit(cursor, replacement_start, source.kind)?;
 
             let overlap_end = replacement_end.min(source_end);
             writer.emit(replacement_start, overlap_end, replacement.kind)?;
             cursor = overlap_end;
-            override_consumed = overlap_end;
 
-            if override_consumed == replacement_end {
+            if overlap_end == replacement_end {
                 override_index += 1;
-                override_consumed = overrides
-                    .get(override_index)
-                    .map_or(0, |region| region.physical_start);
             } else {
                 break;
             }
@@ -119,21 +107,41 @@ where
     if !saw_source {
         return Err(NormalizeError::EmptySource);
     }
-    while override_index < overrides.len() {
-        let replacement = overrides[override_index];
-        let replacement_end = region_end(replacement.physical_start, replacement.page_count)?;
-        if override_consumed != replacement_end {
-            return Err(NormalizeError::OverrideOutsideSource);
-        }
-        override_index += 1;
-        override_consumed = overrides
-            .get(override_index)
-            .map_or(0, |region| region.physical_start);
-    }
     if writer.len == 0 {
         return Err(NormalizeError::EmptySource);
     }
+    validate_required_overrides(overrides, &writer.output[..writer.len])?;
     Ok(writer.len)
+}
+
+fn validate_required_overrides(
+    overrides: &[MemoryRegionOverride],
+    output: &[MemoryRegionV1],
+) -> Result<(), NormalizeError> {
+    for replacement in overrides
+        .iter()
+        .filter(|region| region.require_full_coverage)
+    {
+        let replacement_end = region_end(replacement.physical_start, replacement.page_count)?;
+        let mut cursor = replacement.physical_start;
+        for region in output {
+            let output_end = region_end(region.physical_start, region.page_count)?;
+            if output_end <= cursor {
+                continue;
+            }
+            if region.physical_start > cursor || region.kind != replacement.kind {
+                break;
+            }
+            cursor = output_end.min(replacement_end);
+            if cursor == replacement_end {
+                break;
+            }
+        }
+        if cursor != replacement_end {
+            return Err(NormalizeError::OverrideOutsideSource);
+        }
+    }
+    Ok(())
 }
 
 fn validate_overrides(overrides: &[MemoryRegionOverride]) -> Result<(), NormalizeError> {
@@ -241,6 +249,16 @@ mod tests {
             physical_start: start,
             page_count: pages,
             kind,
+            require_full_coverage: true,
+        }
+    }
+
+    fn optional_replacement(start: u64, pages: u64, kind: u32) -> MemoryRegionOverride {
+        MemoryRegionOverride {
+            physical_start: start,
+            page_count: pages,
+            kind,
+            require_full_coverage: false,
         }
     }
 
@@ -350,6 +368,19 @@ mod tests {
             ),
             Err(NormalizeError::OverrideOutsideSource)
         );
+    }
+
+    #[test]
+    fn permits_optional_mmio_outside_the_firmware_map() {
+        let mut output = [MemoryRegionV1::default(); 4];
+        let count = normalize_memory_regions(
+            [source(0x1000, 2, MEMORY_USABLE)],
+            &[optional_replacement(0x8000_0000, 256, MEMORY_MMIO)],
+            &mut output,
+        )
+        .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(output[0].kind, MEMORY_USABLE);
     }
 
     #[test]

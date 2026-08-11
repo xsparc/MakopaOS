@@ -130,6 +130,7 @@ fn collect_kernel_overrides(
             physical_start: segment.physical_start,
             page_count: segment.page_count() as u64,
             kind: MEMORY_RESERVED,
+            require_full_coverage: true,
         };
         count += 1;
     }
@@ -158,6 +159,7 @@ fn add_framebuffer_override(
         physical_start: start,
         page_count: (end - start) / PAGE_SIZE,
         kind: MEMORY_MMIO,
+        require_full_coverage: false,
     };
     Ok(count + 1)
 }

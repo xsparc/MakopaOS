@@ -260,9 +260,9 @@ decision_ref = "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry
 
 [[research_decisions]]
 id = "RSH-OS012-FINAL-MAP-2026Q3"
-finding = "The final MemoryMapOwned returned by uefi 0.39 after ExitBootServices is the authoritative post-transition map and can be sorted in place without boot-service allocation."
+finding = "The final MemoryMapOwned returned by uefi 0.39 after ExitBootServices is authoritative for described memory and can be sorted in place without boot-service allocation; UEFI permits physical ranges outside the map, so framebuffer MMIO is overlaid where it intersects rather than required to be map-covered."
 disposition = "adopted"
-source_urls = ["https://docs.rs/uefi/0.39.0/uefi/boot/fn.exit_boot_services.html", "https://docs.rs/uefi/0.39.0/uefi/mem/memory_map/struct.MemoryMapOwned.html"]
+source_urls = ["https://docs.rs/uefi/0.39.0/uefi/boot/fn.exit_boot_services.html", "https://docs.rs/uefi/0.39.0/uefi/mem/memory_map/struct.MemoryMapOwned.html", "https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html#efi-boot-services-getmemorymap"]
 observed_on = "2026-08-11"
 reviewed_on = "2026-08-11"
 review_due = "2026-09-11"

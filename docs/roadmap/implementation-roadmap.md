@@ -146,11 +146,12 @@ Delivery: the loader allocates bounded handoff storage before
 `ExitBootServices`, captures only numeric GOP metadata while its protocol is
 live, sorts and normalizes the returned final memory map into at most 1,024
 fixed-size records (24 KiB), and applies protected overrides for loaded kernel
-and framebuffer pages. Conventional memory becomes usable; loader and former
-boot-service memory remains loader-reclaimable until a later kernel slice
-performs the required copy and reclamation transition. The kernel validates the
-complete version-one structure before using any region and emits the
-deterministic terminal record
+pages. The framebuffer is overlaid wherever its page-rounded range intersects
+the firmware map and remains valid when its MMIO range is not map-described.
+Conventional memory becomes usable; loader and former boot-service memory
+remains loader-reclaimable until a later kernel slice performs the required
+copy and reclamation transition. The kernel validates the complete version-one
+structure before using any region and emits the deterministic terminal record
 `MakopaOS handoff v1 ok framebuffer` on the pinned reference machine.
 
 Non-scope: allocating or reclaiming frames, copying the normalized map into a
