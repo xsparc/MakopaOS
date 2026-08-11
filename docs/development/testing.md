@@ -15,11 +15,14 @@ cargo +1.97.1 fmt --all -- --check
 cargo +1.97.1 test --locked -p makopa-boot-contract -p makopa-kernel-image
 ```
 
-The Rust tests enforce the ADR-0001 handoff sizes and field offsets and exercise
-the bounded ELF64 parser on the host. The static evidence check validates
-schema, traceability, local references, and accepted-decision coverage. The
-dated strict check additionally blocks overdue reviews. Both evidence commands
-are offline and use only the Python standard library.
+The Rust tests enforce the ADR-0001 handoff sizes and field offsets, exercise
+the bounded ELF64 parser, normalize protected memory ranges, and reject
+malformed handoff headers, pointers, counts, regions, attributes, and
+framebuffers on the host. Normalization is capped at 1,024 fixed-size region
+records backed by a 24 KiB loader-owned buffer. The static evidence check
+validates schema, traceability, local references, and accepted-decision
+coverage. The dated strict check additionally blocks overdue reviews. Both
+evidence commands are offline and use only the Python standard library.
 
 ## Legacy boot-sector gate
 
@@ -58,14 +61,16 @@ QEMU executable exposes `isa-debug-exit`, boots the directory through a
 read-only VVFAT device with a disposable OVMF variable store, and then requires
 both:
 
-- the exact kernel transcript `MakopaOS 0.1.0\r\n` appears once as the terminal
-  serial record, after any firmware console records;
+- the exact kernel transcript `MakopaOS 0.1.0\r\n` followed by
+  `MakopaOS handoff v1 ok framebuffer\r\n` appears once as the terminal serial
+  sequence, after any firmware console records;
 - QEMU process status `33`, produced by writing success value `0x10` to port
   `0xf4`.
 
-The OS011 entry probe uses the version-one field layout but intentionally
-carries no memory-map entries or framebuffer. Populating and validating those
-fields is OS012 scope.
+The validated record proves the kernel accepted a non-empty, aligned, ordered,
+non-overlapping normalized map and RGB or BGR framebuffer metadata. It does not
+claim real-hardware compatibility or authorize any page reclamation; those
+boundaries remain later roadmap work.
 
 ## Dependency audit
 

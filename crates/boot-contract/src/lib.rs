@@ -2,10 +2,20 @@
 
 use core::mem::size_of;
 
+mod normalize;
+mod validate;
+
+pub use normalize::{
+    MemoryRegionOverride, NormalizeError, SourceMemoryRegion, normalize_memory_regions,
+};
+pub use validate::{ValidationError, validate_handoff, validate_handoff_header};
+
 pub const HANDOFF_MAGIC: [u8; 8] = *b"MAKOPA\0\0";
 pub const ABI_MAJOR: u16 = 1;
 pub const ABI_MINOR: u16 = 0;
 pub const FRAMEBUFFER_PRESENT: u32 = 1;
+pub const PAGE_SIZE: u64 = 4096;
+pub const MAX_MEMORY_REGIONS: usize = 1024;
 
 pub const MEMORY_RESERVED: u32 = 0;
 pub const MEMORY_USABLE: u32 = 1;
@@ -17,6 +27,11 @@ pub const MEMORY_MMIO: u32 = 5;
 pub const PIXEL_FORMAT_UNAVAILABLE: u32 = 0;
 pub const PIXEL_FORMAT_RGB: u32 = 1;
 pub const PIXEL_FORMAT_BGR: u32 = 2;
+
+#[must_use]
+pub const fn is_known_memory_kind(kind: u32) -> bool {
+    kind <= MEMORY_MMIO
+}
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

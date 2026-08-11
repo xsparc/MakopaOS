@@ -16,9 +16,10 @@ a capability-oriented runtime with a small, auditable trusted core.
 - writes through BIOS interrupt `0x10`;
 - produces an exact 512-byte image with the `0x55AA` boot signature;
 - builds a pinned UEFI application and ELF kernel with Rust `1.97.1`;
-- validates the version-one boot ABI and kernel ELF before transfer;
-- emits `MakopaOS 0.1.0` over the serial console and exits QEMU
-  deterministically.
+- validates the kernel ELF and a populated version-one memory-map handoff;
+- carries RGB or BGR framebuffer metadata without exposing firmware protocols;
+- emits deterministic version and validated-handoff records over the serial
+  console before exiting QEMU.
 
 ## Build and verify
 

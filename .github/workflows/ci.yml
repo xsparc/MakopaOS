@@ -64,7 +64,7 @@ jobs:
       - name: Build UEFI boot directory
         run: python3 scripts/build_uefi.py
 
-      - name: Verify UEFI serial boot
+      - name: Verify UEFI handoff boot
         run: |
           python3 scripts/verify_uefi_boot.py \
             --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd \
