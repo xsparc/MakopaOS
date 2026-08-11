@@ -188,7 +188,7 @@ with materially less trusted code and no nightly-toolchain requirement.
 ## References
 
 - [UEFI specification 2.11](https://uefi.org/specs/UEFI/2.11/)
-- [Rust 1.97.1 release notes](https://doc.rust-lang.org/stable/releases.html#version-1971-2026-03-05)
+- [Rust 1.97.1 release notes](https://doc.rust-lang.org/stable/releases.html#version-1971-2026-07-16)
 - [Rust `x86_64-unknown-uefi` platform support](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-uefi.html)
 - [Rust `x86_64-unknown-none` platform support](https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html)
 - [`uefi` crate 0.39.0](https://docs.rs/crate/uefi/0.39.0)

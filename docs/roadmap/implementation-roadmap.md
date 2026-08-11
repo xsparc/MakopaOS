@@ -160,16 +160,55 @@ toolchain or dependency changes, CI topology, releases, and phase promotion.
 
 ## Phase 2: Kernel mechanics
 
+### OS013 — Frame ownership and early-allocation decision
+
+Status: Closed
+
+Depends on: OS012
+
+Record how the kernel takes ownership of eligible physical-memory ranges and
+select the first deterministic frame-allocation representation before OS020
+adds allocator code.
+
+Decision: [ADR-0002](../architecture/decisions/0002-frame-ownership-and-early-allocation.md)
+selects kernel-owned, fixed-capacity sorted extent tables. Initialization copies
+only `MEMORY_USABLE` ranges from the validated handoff; no handoff reference is
+retained. Loader-reclaimable, ACPI, MMIO, framebuffer, kernel, and reserved
+storage remain excluded pending an explicit later reclamation transition.
+
+Acceptance: the accepted decision compares bitmap, buddy, intrusive-list, and
+monotonic alternatives; defines lowest-address allocation, checked free and
+coalescing behavior, fixed-capacity failure semantics, host evidence, and a
+deterministic QEMU reuse sequence; and corrects the Rust `1.97.1` release-note
+date without changing the pin.
+
+Non-scope: code, dependencies, CI changes, boot behavior, frame allocation or
+reclamation, stack switching, page tables, synchronization, releases, and phase
+promotion. OS020 implements this accepted boundary without changing the
+decision.
+
 ### OS020 — Physical frame allocator
 
 Status: Proposed
 
-Depends on: OS012
+Depends on: OS013
 
-Allocate and recycle page frames from validated usable memory ranges.
+Implement the kernel-owned, fixed-capacity sorted-extent allocator selected by
+ADR-0002. After handoff validation, copy only `MEMORY_USABLE` ranges into
+immutable managed extents and mutable free extents; retain no handoff reference.
+Allocate the lowest available physical frame and recycle checked frees with
+sorted coalescing.
 
-Acceptance: deterministic host tests cover exhaustion, reuse, alignment, and
-reserved ranges; QEMU allocates and returns a known frame sequence.
+Acceptance: deterministic host tests cover copied ownership, usable-only
+seeding, exhaustion, multi-extent ordering, alignment, reserved ranges,
+left/right/two-sided coalescing, and state-preserving rejection of duplicate,
+unaligned, unmanaged, overflowing, and capacity-exceeding frees. QEMU allocates
+frames A and B, frees A, reallocates A, and emits the exact terminal record
+`MakopaOS frames v1 ok reuse`.
+
+Non-scope: loader-reclaimable memory, multi-frame allocation, dynamic allocator
+metadata, page-table or stack changes, synchronization, interrupts, releases,
+and phase promotion.
 
 ### OS021 — Address-space isolation
 
