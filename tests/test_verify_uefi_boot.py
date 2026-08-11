@@ -6,6 +6,7 @@ from pathlib import Path
 from scripts.verify_uefi_boot import (
     EXPECTED_EXIT_CODE,
     EXPECTED_SERIAL,
+    FRAME_SERIAL,
     HANDOFF_SERIAL,
     VERSION_SERIAL,
     boot_violations,
@@ -32,12 +33,23 @@ class VerifyUefiBootTests(unittest.TestCase):
         self.assertTrue(any("transcript mismatch" in error for error in errors))
 
     def test_rejects_handoff_without_framebuffer_evidence(self) -> None:
-        transcript = VERSION_SERIAL + b"MakopaOS handoff v1 ok no-framebuffer\r\n"
+        transcript = (
+            VERSION_SERIAL
+            + b"MakopaOS handoff v1 ok no-framebuffer\r\n"
+            + FRAME_SERIAL
+        )
         errors = boot_violations(EXPECTED_EXIT_CODE, transcript)
         self.assertTrue(any("transcript mismatch" in error for error in errors))
 
-    def test_expected_transcript_ends_with_framebuffer_handoff_record(self) -> None:
-        self.assertTrue(EXPECTED_SERIAL.endswith(HANDOFF_SERIAL))
+    def test_expected_transcript_ends_with_frame_reuse_record(self) -> None:
+        self.assertTrue(EXPECTED_SERIAL.endswith(FRAME_SERIAL))
+        self.assertIn(HANDOFF_SERIAL, EXPECTED_SERIAL)
+
+    def test_rejects_validated_handoff_without_frame_reuse_evidence(self) -> None:
+        errors = boot_violations(
+            EXPECTED_EXIT_CODE, VERSION_SERIAL + HANDOFF_SERIAL
+        )
+        self.assertTrue(any("transcript mismatch" in error for error in errors))
 
     def test_rejects_duplicate_transcript(self) -> None:
         errors = boot_violations(EXPECTED_EXIT_CODE, EXPECTED_SERIAL * 2)

@@ -12,17 +12,25 @@ python -m unittest discover -s tests -v
 python scripts/check_project_evidence.py
 python scripts/check_project_evidence.py --as-of YYYY-MM-DD --strict
 cargo +1.97.1 fmt --all -- --check
-cargo +1.97.1 test --locked -p makopa-boot-contract -p makopa-kernel-image
+cargo +1.97.1 test --locked \
+  -p makopa-boot-contract \
+  -p makopa-frame-allocator \
+  -p makopa-kernel-image
 ```
 
 The Rust tests enforce the ADR-0001 handoff sizes and field offsets, exercise
 the bounded ELF64 parser, normalize protected memory ranges, and reject
 malformed handoff headers, pointers, counts, regions, attributes, and
-framebuffers on the host. Normalization is capped at 1,024 fixed-size region
-records backed by a 24 KiB loader-owned buffer. The static evidence check
-validates schema, traceability, local references, and accepted-decision
-coverage. The dated strict check additionally blocks overdue reviews. Both
-evidence commands are offline and use only the Python standard library.
+framebuffers on the host. The ADR-0002 allocator tests cover copied ownership,
+usable-only seeding, lowest-address allocation, explicit exhaustion, sorted
+coalescing, fragmentation capacity, state-preserving errors, source lifetime,
+and exhaustive small sequences against a reference model. Its two 1,024-entry
+extent tables occupy 32,784 bytes, below the reviewed 40 KiB static limit.
+Normalization remains capped at 1,024 fixed-size region records backed by a 24
+KiB loader-owned buffer. The static evidence check validates schema,
+traceability, local references, and accepted-decision coverage. The dated
+strict check additionally blocks overdue reviews. Both evidence commands are
+offline and use only the Python standard library.
 
 ## Legacy boot-sector gate
 
@@ -61,16 +69,19 @@ QEMU executable exposes `isa-debug-exit`, boots the directory through a
 read-only VVFAT device with a disposable OVMF variable store, and then requires
 both:
 
-- the exact kernel transcript `MakopaOS 0.1.0\r\n` followed by
-  `MakopaOS handoff v1 ok framebuffer\r\n` appears once as the terminal serial
-  sequence, after any firmware console records;
+- the exact kernel transcript `MakopaOS 0.1.0\r\n`, followed by
+  `MakopaOS handoff v1 ok framebuffer\r\n` and
+  `MakopaOS frames v1 ok reuse\r\n`, appears once as the terminal serial
+  sequence after any firmware console records;
 - QEMU process status `33`, produced by writing success value `0x10` to port
   `0xf4`.
 
-The validated record proves the kernel accepted a non-empty, aligned, ordered,
-non-overlapping normalized map and RGB or BGR framebuffer metadata. It does not
-claim real-hardware compatibility or authorize any page reclamation; those
-boundaries remain later roadmap work.
+The handoff record proves the kernel accepted a non-empty, aligned, ordered,
+non-overlapping normalized map and RGB or BGR framebuffer metadata. The frame
+record proves the kernel then initialized its owned allocator, allocated frames
+A and B, freed A, and received A from the next allocation. The scenario does
+not reclaim loader-owned memory, change the inherited stack or page tables,
+exercise concurrent access, or claim real-hardware compatibility.
 
 ## Dependency audit
 

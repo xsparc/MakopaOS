@@ -18,8 +18,10 @@ a capability-oriented runtime with a small, auditable trusted core.
 - builds a pinned UEFI application and ELF kernel with Rust `1.97.1`;
 - validates the kernel ELF and a populated version-one memory-map handoff;
 - carries RGB or BGR framebuffer metadata without exposing firmware protocols;
-- emits deterministic version and validated-handoff records over the serial
-  console before exiting QEMU.
+- copies usable memory into a bounded kernel-owned physical-frame allocator;
+- allocates, recycles, and deterministically reuses page-aligned frames;
+- emits deterministic version, validated-handoff, and frame-reuse records over
+  the serial console before exiting QEMU.
 
 ## Build and verify
 
@@ -35,7 +37,10 @@ Prerequisites:
 ```sh
 nasm -Wall -Werror -f bin -o boot.bin boot.asm
 python scripts/verify_boot.py boot.bin
-cargo +1.97.1 test --locked -p makopa-boot-contract -p makopa-kernel-image
+cargo +1.97.1 test --locked \
+  -p makopa-boot-contract \
+  -p makopa-frame-allocator \
+  -p makopa-kernel-image
 python scripts/build_uefi.py
 python scripts/verify_uefi_boot.py \
   --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd \

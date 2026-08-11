@@ -38,7 +38,10 @@ python -m unittest discover -s tests -v
 python scripts/check_project_evidence.py
 python scripts/check_project_evidence.py --as-of YYYY-MM-DD --strict
 cargo +1.97.1 fmt --all -- --check
-cargo +1.97.1 test --locked -p makopa-boot-contract -p makopa-kernel-image
+cargo +1.97.1 test --locked \
+  -p makopa-boot-contract \
+  -p makopa-frame-allocator \
+  -p makopa-kernel-image
 cargo +1.97.1 audit --deny warnings
 nasm -Wall -Werror -f bin -o boot.bin boot.asm
 python scripts/verify_boot.py boot.bin

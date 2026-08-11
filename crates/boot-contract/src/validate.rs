@@ -458,13 +458,14 @@ mod tests {
             Err(ValidationError::HandoffInUsableMemory)
         );
 
+        let mut regions = [MemoryRegionV1::default()];
         let pointer_page = (regions.as_ptr() as usize as u64) & !(PAGE_SIZE - 1);
-        let regions = [MemoryRegionV1 {
+        regions[0] = MemoryRegionV1 {
             physical_start: pointer_page,
             page_count: 1,
             kind: MEMORY_USABLE,
             attributes: 0,
-        }];
+        };
         let handoff = valid_handoff(&regions);
         assert_eq!(
             validate_handoff(&handoff, 0x1000, &regions),

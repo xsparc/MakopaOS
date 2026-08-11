@@ -31,10 +31,18 @@ name = "makopa-boot-contract"
 version = "0.1.0"
 
 [[package]]
+name = "makopa-frame-allocator"
+version = "0.1.0"
+dependencies = [
+ "makopa-boot-contract",
+]
+
+[[package]]
 name = "makopa-kernel"
 version = "0.1.0"
 dependencies = [
  "makopa-boot-contract",
+ "makopa-frame-allocator",
 ]
 
 [[package]]

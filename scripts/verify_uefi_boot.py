@@ -12,7 +12,8 @@ from pathlib import Path
 
 VERSION_SERIAL = b"MakopaOS 0.1.0\r\n"
 HANDOFF_SERIAL = b"MakopaOS handoff v1 ok framebuffer\r\n"
-EXPECTED_SERIAL = VERSION_SERIAL + HANDOFF_SERIAL
+FRAME_SERIAL = b"MakopaOS frames v1 ok reuse\r\n"
+EXPECTED_SERIAL = VERSION_SERIAL + HANDOFF_SERIAL + FRAME_SERIAL
 EXPECTED_EXIT_CODE = 33
 
 
@@ -21,7 +22,7 @@ def boot_violations(returncode: int, stdout: bytes) -> list[str]:
     errors: list[str] = []
     if stdout.count(EXPECTED_SERIAL) != 1 or not stdout.endswith(EXPECTED_SERIAL):
         errors.append(
-            "kernel handoff transcript mismatch: expected one terminal "
+            "kernel transcript mismatch: expected one terminal "
             f"{EXPECTED_SERIAL!r}, found {stdout!r}"
         )
     if returncode != EXPECTED_EXIT_CODE:

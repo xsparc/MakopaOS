@@ -1,17 +1,12 @@
 [package]
-name = "makopa-kernel"
+name = "makopa-frame-allocator"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
-build = "build.rs"
 
 [dependencies]
 makopa-boot-contract.workspace = true
-makopa-frame-allocator.workspace = true
 
-[[bin]]
-name = "makopa-kernel"
-path = "src/main.rs"
-test = false
-bench = false
+[lib]
+path = "src/lib.rs"
