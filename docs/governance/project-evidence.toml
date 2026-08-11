@@ -79,7 +79,7 @@ status = "implemented"
 objective_ids = ["OBJ-BOOT-REAL", "OBJ-TRACEABLE-CHANGE"]
 roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os013-frame-ownership-and-early-allocation-decision", "docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"]
 design_refs = ["docs/architecture/overview.md#kernel-core", "docs/architecture/decisions/0002-frame-ownership-and-early-allocation.md"]
-implementation_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "crates/frame-allocator/Cargo.toml", "crates/frame-allocator/src/lib.rs", "kernel/Cargo.toml", "kernel/src/main.rs", "scripts/verify_uefi_boot.py"]
+implementation_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "crates/frame-allocator/Cargo.toml", "crates/frame-allocator/src/lib.rs", "kernel/Cargo.toml", "kernel/linker.ld", "kernel/src/main.rs", "scripts/verify_uefi_boot.py"]
 verification_refs = ["crates/frame-allocator/src/lib.rs", "tests/test_verify_uefi_boot.py"]
 validation_refs = ["docs/development/testing.md#repository-and-contract-gates", "docs/development/testing.md#uefi-kernel-entry-gate"]
 risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures", "docs/security/threat-model.md#required-controls"]
@@ -198,7 +198,7 @@ requirement_ids = ["REQ-PHYSICAL-FRAMES"]
 roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"]
 approval_ref = "conversation:2026-08-11-approve-os020"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"]
-evidence_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "CONTRIBUTING.md", "README.md", "crates/boot-contract/src/validate.rs", "crates/frame-allocator/Cargo.toml", "crates/frame-allocator/src/lib.rs", "docs/development/testing.md", "docs/security/threat-model.md", "kernel/Cargo.toml", "kernel/src/main.rs", "scripts/verify_uefi_boot.py", "tests/test_verify_uefi_boot.py"]
+evidence_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "CONTRIBUTING.md", "README.md", "crates/boot-contract/src/validate.rs", "crates/frame-allocator/Cargo.toml", "crates/frame-allocator/src/lib.rs", "docs/development/testing.md", "docs/security/threat-model.md", "kernel/Cargo.toml", "kernel/linker.ld", "kernel/src/main.rs", "scripts/verify_uefi_boot.py", "tests/test_verify_uefi_boot.py"]
 
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
