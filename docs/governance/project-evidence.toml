@@ -73,6 +73,18 @@ validation_refs = ["docs/development/testing.md#uefi-kernel-entry-gate"]
 risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures", "docs/security/threat-model.md#required-controls"]
 
 [[requirements]]
+id = "REQ-PHYSICAL-FRAMES"
+statement = "Allocate and recycle page-aligned physical frames only from kernel-owned copies of validated usable ranges."
+status = "planned"
+objective_ids = ["OBJ-BOOT-REAL", "OBJ-TRACEABLE-CHANGE"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os013-frame-ownership-and-early-allocation-decision", "docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"]
+design_refs = ["docs/architecture/overview.md#kernel-core", "docs/architecture/decisions/0002-frame-ownership-and-early-allocation.md"]
+implementation_refs = []
+verification_refs = []
+validation_refs = []
+risk_refs = ["docs/security/threat-model.md#required-controls"]
+
+[[requirements]]
 id = "REQ-EXPLICIT-CAPABILITIES"
 statement = "Authorize task effects through unforgeable, scoped capability handles."
 status = "planned"
@@ -168,6 +180,16 @@ approval_ref = "conversation:2026-08-11-approve-os012"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"]
 evidence_refs = [".github/workflows/ci.yml", "README.md", "crates/boot-contract/src/normalize.rs", "crates/boot-contract/src/validate.rs", "docs/development/testing.md", "docs/security/threat-model.md", "kernel/src/main.rs", "loader/src/main.rs", "scripts/verify_uefi_boot.py", "tests/test_verify_uefi_boot.py"]
 
+[[work_items]]
+id = "OS013-FRAME-OWNERSHIP"
+title = "Select kernel frame ownership and early allocation semantics"
+status = "closed"
+requirement_ids = ["REQ-PHYSICAL-FRAMES"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os013-frame-ownership-and-early-allocation-decision"]
+approval_ref = "conversation:2026-08-11-approve-os013"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os013-frame-ownership-and-early-allocation-decision"]
+evidence_refs = ["docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md", "docs/architecture/decisions/0002-frame-ownership-and-early-allocation.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
+
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
 finding = "MCP 2026-07-28 and A2A 1.0.1 are the current stable study baselines for replaceable user-space protocol gateways."
@@ -212,7 +234,7 @@ decision_ref = "docs/architecture/overview.md#product-principles"
 id = "RSH-BOOT-TOOLCHAIN-2026Q3"
 finding = "Rust 1.97.1, uefi 0.39.0, UEFI 2.11, Rust's UEFI and freestanding x86-64 targets, bundled rust-lld, and the Ubuntu 20260810T000000Z NASM, QEMU, and OVMF packages form the adopted OS010 reproducible toolchain baseline."
 disposition = "adopted"
-source_urls = ["https://doc.rust-lang.org/stable/releases.html#version-1971-2026-03-05", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-uefi.html", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html", "https://docs.rs/crate/uefi/0.39.0", "https://uefi.org/specs/UEFI/2.11/", "https://snapshot.ubuntu.com/"]
+source_urls = ["https://doc.rust-lang.org/stable/releases.html#version-1971-2026-07-16", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-uefi.html", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html", "https://docs.rs/crate/uefi/0.39.0", "https://uefi.org/specs/UEFI/2.11/", "https://snapshot.ubuntu.com/"]
 observed_on = "2026-08-10"
 reviewed_on = "2026-08-10"
 review_due = "2026-09-10"
@@ -267,6 +289,16 @@ observed_on = "2026-08-11"
 reviewed_on = "2026-08-11"
 review_due = "2026-09-11"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"
+
+[[research_decisions]]
+id = "RSH-OS013-FRAME-OWNERSHIP-2026Q3"
+finding = "UEFI memory-type ownership and early allocator tradeoffs support copying only usable ranges into bounded kernel-owned extents while deferring buddy allocation and loader-memory reclamation until their requirements exist."
+disposition = "adopted"
+source_urls = ["https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html#efi-boot-services-getmemorymap", "https://cdn.kernel.org/doc/html/latest/mm/physical_memory.html"]
+observed_on = "2026-08-11"
+reviewed_on = "2026-08-11"
+review_due = "2026-09-11"
+decision_ref = "docs/architecture/decisions/0002-frame-ownership-and-early-allocation.md"
 
 [[research_decisions]]
 id = "RSH-OS012-FRAMEBUFFER-2026Q3"
