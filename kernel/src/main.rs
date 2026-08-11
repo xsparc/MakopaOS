@@ -3,9 +3,13 @@
 
 use core::arch::asm;
 use core::fmt::{self, Write};
+use core::mem::align_of;
 use core::panic::PanicInfo;
+use core::slice;
 
-use makopa_boot_contract::BootHandoffV1;
+use makopa_boot_contract::{
+    BootHandoffV1, FRAMEBUFFER_PRESENT, MemoryRegionV1, validate_handoff, validate_handoff_header,
+};
 
 const KERNEL_SERIAL: u16 = 0x3f8;
 const QEMU_EXIT_PORT: u16 = 0xf4;
@@ -31,20 +35,39 @@ pub unsafe extern "sysv64" fn kernel_entry(handoff: *const BootHandoffV1) -> ! {
     let mut serial = SerialPort::new(KERNEL_SERIAL);
     serial.initialize();
 
-    if handoff.is_null() {
+    if handoff.is_null() || !(handoff as usize).is_multiple_of(align_of::<BootHandoffV1>()) {
         let _ = serial.write_str("MakopaOS boot error: null handoff\r\n");
         exit_qemu(QEMU_FAILURE);
     }
 
     // SAFETY: ADR-0001 requires the loader to pass an identity-mapped, readable
     // pointer whose storage remains live until the kernel copies the handoff.
-    let handoff = unsafe { &*handoff };
-    if !handoff.is_empty_v1() {
+    let handoff_address = handoff as usize as u64;
+    let handoff = unsafe { handoff.read() };
+    let Ok(region_count) = validate_handoff_header(&handoff) else {
+        let _ = serial.write_str("MakopaOS boot error: invalid handoff\r\n");
+        exit_qemu(QEMU_FAILURE);
+    };
+    let Ok(region_address) = usize::try_from(handoff.memory_regions_address) else {
+        let _ = serial.write_str("MakopaOS boot error: invalid handoff\r\n");
+        exit_qemu(QEMU_FAILURE);
+    };
+    // SAFETY: validate_handoff_header bounded the non-null, aligned address and
+    // count. ADR-0001 makes the loader responsible for mapping this readable
+    // storage; validate_handoff checks every record before the kernel uses it.
+    let regions =
+        unsafe { slice::from_raw_parts(region_address as *const MemoryRegionV1, region_count) };
+    if validate_handoff(&handoff, handoff_address, regions).is_err() {
         let _ = serial.write_str("MakopaOS boot error: invalid handoff\r\n");
         exit_qemu(QEMU_FAILURE);
     }
 
     let _ = serial.write_str("MakopaOS 0.1.0\r\n");
+    if handoff.header.flags & FRAMEBUFFER_PRESENT != 0 {
+        let _ = serial.write_str("MakopaOS handoff v1 ok framebuffer\r\n");
+    } else {
+        let _ = serial.write_str("MakopaOS handoff v1 ok no-framebuffer\r\n");
+    }
     exit_qemu(QEMU_SUCCESS)
 }
 

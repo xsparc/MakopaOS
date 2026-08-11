@@ -129,15 +129,34 @@ OS012.
 
 ### OS012 — Boot handoff validation
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS011
 
 Pass and validate a versioned handoff containing the memory map and framebuffer
 metadata.
 
-Acceptance: unit tests reject incompatible versions and malformed ranges; QEMU
-smoke tests cover one valid handoff.
+Acceptance: unit tests reject incompatible versions, sizes, flags, pointers,
+counts, kinds, attributes, malformed ranges, overlaps, arithmetic overflow,
+invalid framebuffer metadata, unsafe loader-storage classifications, and
+normalization overflow. The pinned QEMU smoke test covers one valid non-empty
+memory map with RGB or BGR framebuffer metadata.
+
+Delivery: the loader allocates bounded handoff storage before
+`ExitBootServices`, captures only numeric GOP metadata while its protocol is
+live, sorts and normalizes the returned final memory map into at most 1,024
+fixed-size records (24 KiB), and applies protected overrides for loaded kernel
+pages. The framebuffer is overlaid wherever its page-rounded range intersects
+the firmware map and remains valid when its MMIO range is not map-described.
+Conventional memory becomes usable; loader and former boot-service memory
+remains loader-reclaimable until a later kernel slice performs the required
+copy and reclamation transition. The kernel validates the complete version-one
+structure before using any region and emits the deterministic terminal record
+`MakopaOS handoff v1 ok framebuffer` on the pinned reference machine.
+
+Non-scope: allocating or reclaiming frames, copying the normalized map into a
+new kernel allocator, changing page tables or stacks, interrupts, drivers,
+toolchain or dependency changes, CI topology, releases, and phase promotion.
 
 ## Phase 2: Kernel mechanics
 

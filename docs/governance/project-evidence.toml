@@ -65,10 +65,10 @@ id = "REQ-MODERN-BOOT"
 statement = "Boot a memory-safe x86-64 kernel through a versioned modern firmware handoff."
 status = "implemented"
 objective_ids = ["OBJ-BOOT-REAL"]
-roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision", "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os010-toolchain-and-boot-contract-decision", "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry", "docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"]
 design_refs = ["docs/architecture/overview.md#boot-boundary", "docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md"]
-implementation_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "crates/boot-contract/src/lib.rs", "crates/kernel-image/src/lib.rs", "kernel/src/main.rs", "kernel/linker.ld", "loader/src/main.rs", "rust-toolchain.toml", "scripts/build_uefi.py", "scripts/verify_uefi_boot.py"]
-verification_refs = ["crates/boot-contract/src/lib.rs", "crates/kernel-image/src/lib.rs", "tests/test_build_uefi.py", "tests/test_verify_uefi_boot.py"]
+implementation_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "crates/boot-contract/src/lib.rs", "crates/boot-contract/src/normalize.rs", "crates/boot-contract/src/validate.rs", "crates/kernel-image/src/lib.rs", "kernel/src/main.rs", "kernel/linker.ld", "loader/src/main.rs", "rust-toolchain.toml", "scripts/build_uefi.py", "scripts/verify_uefi_boot.py"]
+verification_refs = ["crates/boot-contract/src/lib.rs", "crates/boot-contract/src/normalize.rs", "crates/boot-contract/src/validate.rs", "crates/kernel-image/src/lib.rs", "tests/test_build_uefi.py", "tests/test_verify_uefi_boot.py"]
 validation_refs = ["docs/development/testing.md#uefi-kernel-entry-gate"]
 risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures", "docs/security/threat-model.md#required-controls"]
 
@@ -157,6 +157,16 @@ roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entr
 approval_ref = "conversation:2026-08-11-approve-os011"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"]
 evidence_refs = [".github/workflows/ci.yml", "Cargo.lock", "crates/boot-contract/src/lib.rs", "crates/kernel-image/src/lib.rs", "docs/development/testing.md", "kernel/src/main.rs", "loader/src/main.rs", "scripts/build_uefi.py", "scripts/verify_uefi_boot.py", "tests/test_build_uefi.py", "tests/test_verify_uefi_boot.py"]
+
+[[work_items]]
+id = "OS012-BOOT-HANDOFF-VALIDATION"
+title = "Populate and validate the versioned boot handoff"
+status = "closed"
+requirement_ids = ["REQ-MODERN-BOOT"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"]
+approval_ref = "conversation:2026-08-11-approve-os012"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"]
+evidence_refs = [".github/workflows/ci.yml", "README.md", "crates/boot-contract/src/normalize.rs", "crates/boot-contract/src/validate.rs", "docs/development/testing.md", "docs/security/threat-model.md", "kernel/src/main.rs", "loader/src/main.rs", "scripts/verify_uefi_boot.py", "tests/test_verify_uefi_boot.py"]
 
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
@@ -247,6 +257,26 @@ observed_on = "2026-08-11"
 reviewed_on = "2026-08-11"
 review_due = "2026-09-11"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"
+
+[[research_decisions]]
+id = "RSH-OS012-FINAL-MAP-2026Q3"
+finding = "The final MemoryMapOwned returned by uefi 0.39 after ExitBootServices is authoritative for described memory and can be sorted in place without boot-service allocation; UEFI permits physical ranges outside the map, so framebuffer MMIO is overlaid where it intersects rather than required to be map-covered."
+disposition = "adopted"
+source_urls = ["https://docs.rs/uefi/0.39.0/uefi/boot/fn.exit_boot_services.html", "https://docs.rs/uefi/0.39.0/uefi/mem/memory_map/struct.MemoryMapOwned.html", "https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html#efi-boot-services-getmemorymap"]
+observed_on = "2026-08-11"
+reviewed_on = "2026-08-11"
+review_due = "2026-09-11"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"
+
+[[research_decisions]]
+id = "RSH-OS012-FRAMEBUFFER-2026Q3"
+finding = "UEFI GOP mode and framebuffer values must be copied while the protocol is live; version one carries only RGB or BGR numeric metadata and reports bitmask or blit-only modes as unavailable."
+disposition = "adopted"
+source_urls = ["https://docs.rs/uefi/0.39.0/uefi/proto/console/gop/struct.GraphicsOutput.html", "https://uefi.org/specs/UEFI/2.11/12_Protocols_Console_Support.html"]
+observed_on = "2026-08-11"
+reviewed_on = "2026-08-11"
+review_due = "2026-09-11"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"
 
 [[research_decisions]]
 id = "RSH-SUPPLY-CHAIN-2026Q3"

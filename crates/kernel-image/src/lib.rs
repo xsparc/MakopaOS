@@ -8,7 +8,7 @@ const ELF_MACHINE_X86_64: u16 = 62;
 const ELF_TYPE_EXECUTABLE: u16 = 2;
 const PAGE_SIZE: u64 = 4096;
 const MINIMUM_LOAD_ADDRESS: u64 = 0x10_0000;
-const MAXIMUM_LOAD_SEGMENTS: usize = 16;
+pub const MAXIMUM_LOAD_SEGMENTS: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Error {

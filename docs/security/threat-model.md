@@ -19,6 +19,8 @@ architecture nevertheless treats isolation claims as testable contracts.
 - malformed or hostile binaries;
 - overlapping, truncated, misaligned, or incorrectly addressed kernel ELF
   segments;
+- malformed, overlapping, overflowing, or incorrectly classified boot memory
+  regions and framebuffer ranges;
 - firmware protocol handles, allocations, or references used after boot
   services exit;
 - invalid pointers, lengths, handles, and IPC messages;
@@ -36,6 +38,8 @@ architecture nevertheless treats isolation claims as testable contracts.
 - no live firmware protocols or heap-backed values across `ExitBootServices`;
 - a versioned, fixed-layout handoff held in loader-owned storage until kernel
   entry;
+- bounded final-map normalization that keeps live kernel and framebuffer pages
+  outside usable memory and defers loader-page reclamation;
 - deny-by-default capability manifests;
 - typed validation at every privilege and protocol boundary;
 - bounded queues, timeouts, cancellation, and replay protection;
