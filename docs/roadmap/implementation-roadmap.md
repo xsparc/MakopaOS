@@ -129,7 +129,7 @@ OS012.
 
 ### OS012 — Boot handoff validation
 
-Status: In progress
+Status: Closed
 
 Depends on: OS011
 

@@ -161,7 +161,7 @@ evidence_refs = [".github/workflows/ci.yml", "Cargo.lock", "crates/boot-contract
 [[work_items]]
 id = "OS012-BOOT-HANDOFF-VALIDATION"
 title = "Populate and validate the versioned boot handoff"
-status = "in-progress"
+status = "closed"
 requirement_ids = ["REQ-MODERN-BOOT"]
 roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"]
 approval_ref = "conversation:2026-08-11-approve-os012"
