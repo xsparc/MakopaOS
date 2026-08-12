@@ -160,6 +160,8 @@ impl FrameRole {
     }
 }
 
+const _: () = assert!(FrameRole::ALL.len() <= TASK_LEDGER_CAPACITY);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct LinkSpec {
     pub parent: FrameRole,
@@ -382,22 +384,28 @@ impl FrameLedger {
         self.len == 0
     }
 
-    fn push(&mut self, frame: OwnedFrame) -> Result<(), OwnerError> {
-        if !frame.physical_start.is_multiple_of(PAGE_SIZE) {
-            return Err(OwnerError::InvalidFrame);
-        }
-        if self
-            .as_slice()
-            .iter()
-            .any(|owned| owned.physical_start == frame.physical_start || owned.role == frame.role)
-        {
-            return Err(OwnerError::DuplicateFrame);
-        }
+    fn push_owned(&mut self, frame: OwnedFrame) -> Result<(), OwnerError> {
         if self.len == TASK_LEDGER_CAPACITY {
             return Err(OwnerError::LedgerFull);
         }
         self.frames[self.len] = frame;
         self.len += 1;
+        Ok(())
+    }
+
+    fn validate_latest(&self) -> Result<(), OwnerError> {
+        let Some((frame, previous)) = self.as_slice().split_last() else {
+            return Ok(());
+        };
+        if !frame.physical_start.is_multiple_of(PAGE_SIZE) {
+            return Err(OwnerError::InvalidFrame);
+        }
+        if previous
+            .iter()
+            .any(|owned| owned.physical_start == frame.physical_start || owned.role == frame.role)
+        {
+            return Err(OwnerError::DuplicateFrame);
+        }
         Ok(())
     }
 
@@ -481,7 +489,10 @@ impl AddressSpaceOwner {
         if self.state != LifecycleState::Building || !self.generation_live {
             return Err(OwnerError::WrongState);
         }
-        self.ledger.push(frame)
+        // Allocation has already transferred ownership. Record it before
+        // semantic validation so rollback can return or retain every frame.
+        self.ledger.push_owned(frame)?;
+        self.ledger.validate_latest()
     }
 
     fn publish(&mut self, root: u64) -> Result<(), OwnerError> {
@@ -1120,6 +1131,39 @@ mod tests {
             })
             .collect();
         assert_eq!(frames.into_iter().rev().collect::<Vec<_>>(), returned);
+    }
+
+    #[test]
+    fn rejected_allocations_remain_owned_until_rollback_returns_them() {
+        let mut unaligned = ModelBackend::with_frames(&[1]);
+        let failure = construct_address_space(18, &mut unaligned).unwrap_err();
+        assert_eq!(BuildCause::Owner(OwnerError::InvalidFrame), failure.cause);
+        assert_eq!(None, failure.rollback_error);
+        assert!(failure.retained.is_empty());
+        assert!(unaligned.live.is_empty());
+        assert_eq!(
+            Some(&Event::Return(FrameRole::Root, 1)),
+            unaligned.events.last()
+        );
+
+        let mut duplicate = ModelBackend::with_frames(&[0x1000, 0x1000]);
+        let failure = construct_address_space(19, &mut duplicate).unwrap_err();
+        assert_eq!(BuildCause::Owner(OwnerError::DuplicateFrame), failure.cause);
+        assert_eq!(None, failure.rollback_error);
+        assert!(failure.retained.is_empty());
+        assert!(duplicate.live.is_empty());
+        assert_eq!(
+            vec![
+                Event::Return(FrameRole::UserPml3, 0x1000),
+                Event::Return(FrameRole::Root, 0x1000),
+            ],
+            duplicate
+                .events
+                .iter()
+                .filter(|event| matches!(event, Event::Return(_, _)))
+                .copied()
+                .collect::<Vec<_>>()
+        );
     }
 
     #[test]
