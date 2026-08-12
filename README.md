@@ -20,8 +20,10 @@ a capability-oriented runtime with a small, auditable trusted core.
 - carries RGB or BGR framebuffer metadata without exposing firmware protocols;
 - copies usable memory into a bounded kernel-owned physical-frame allocator;
 - allocates, recycles, and deterministically reuses page-aligned frames;
-- emits deterministic version, validated-handoff, and frame-reuse records over
-  the serial console before exiting QEMU.
+- installs a kernel-owned recovery address space and guarded exception stacks;
+- contains one exact ring-3 page fault and returns all task-owned frames; and
+- emits deterministic version, handoff, frame-reuse, and fault-containment
+  records over the serial console before exiting QEMU.
 
 ## Build and verify
 
@@ -38,6 +40,7 @@ Prerequisites:
 nasm -Wall -Werror -f bin -o boot.bin boot.asm
 python scripts/verify_boot.py boot.bin
 cargo +1.97.1 test --locked \
+  -p makopa-address-space \
   -p makopa-boot-contract \
   -p makopa-frame-allocator \
   -p makopa-kernel-image

@@ -39,6 +39,7 @@ python scripts/check_project_evidence.py
 python scripts/check_project_evidence.py --as-of YYYY-MM-DD --strict
 cargo +1.97.1 fmt --all -- --check
 cargo +1.97.1 test --locked \
+  -p makopa-address-space \
   -p makopa-boot-contract \
   -p makopa-frame-allocator \
   -p makopa-kernel-image

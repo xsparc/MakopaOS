@@ -1,5 +1,5 @@
 [toolchain]
 channel = "1.97.1"
 profile = "minimal"
-components = ["rustfmt"]
+components = ["rustfmt", "llvm-tools-preview"]
 targets = ["x86_64-unknown-none", "x86_64-unknown-uefi"]
