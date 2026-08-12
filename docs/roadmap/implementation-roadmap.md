@@ -1,8 +1,8 @@
 # MakopaOS implementation roadmap
 
 - Status: Active; item states are recorded below
-- Baseline: `7c8c62bbe2cf548b7a92ef52b9cc9a98242c7a62`
-- Updated: 2026-08-11
+- Baseline: `95e1ad7e8be8435ee2a5777651e154c06e0e66cd`
+- Updated: 2026-08-12
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
 items describe sequence, not implementation authority. Each item should ship in
@@ -222,17 +222,57 @@ Non-scope: loader-reclaimable memory, multi-frame allocation, dynamic allocator
 metadata, page-table or stack changes, synchronization, interrupts, releases,
 and phase promotion.
 
+### OS014 — Address-space and fault-containment decision
+
+Status: Closed
+
+Depends on: OS020
+
+Record the owned x86-64 paging, privilege-transition, exception-entry,
+address-space ownership, and teardown contract required before OS021 changes
+page tables or enters user mode.
+
+Decision:
+[ADR-0003](../architecture/decisions/0003-address-space-and-fault-containment.md)
+selects four-level 4 KiB paging, a statically bounded kernel recovery root,
+guarded recovery and double-fault stacks, a single temporary mapping window,
+stable assembly exception trampolines, a fixed ring-3 probe, and explicit
+address-space lifecycle and frame-return ordering.
+
+Acceptance: the accepted decision defines supervisor W^X and NX mappings,
+fixed virtual addresses and table bounds, stable exception-frame ownership,
+exact user-fault classification and recovery, state-preserving construction
+rollback, stale-owner rejection, and unmap and invalidation before frame reuse.
+It specifies the deterministic host and QEMU evidence OS021 must provide.
+
+Non-scope: code, dependencies, CI changes, boot behavior, page-table or stack
+changes, interrupt activation, user-mode execution, releases, and phase
+promotion. OS021 implements the accepted contract without changing the
+decision.
+
 ### OS021 — Address-space isolation
 
 Status: Proposed
 
-Depends on: OS020
+Depends on: OS014
 
-Create a second address space with guarded kernel mappings and demonstrate a
-contained user-mode fault.
+Install the ADR-0003 kernel recovery context, create one separately owned
+address space with guarded supervisor mappings, enter the fixed ring-3 probe,
+and contain its expected invalid write.
 
-Acceptance: an invalid user write terminates only the test task and emits the
-expected event.
+Acceptance: host tests cover mapping permissions, fixed bounds, lifecycle
+transitions, partial-construction rollback, stale-owner rejection, temporary-
+window invalidation, and unmap-before-free ordering. The pinned QEMU gate
+switches from inherited state to the owned recovery root and guarded stack,
+enters ring 3, validates the exact task, CPL, `CR2`, and page-fault error code,
+returns to the recovery context without resuming the faulting instruction,
+tears down every task-owned frame, and emits the exact terminal record
+`MakopaOS isolation v1 ok user-fault-contained` before the existing success
+exit.
+
+Non-scope: multiple tasks, scheduling, IPC, capabilities, asynchronous
+interrupts, SMP, PCID, global mappings, huge pages, LA57, a physical-memory
+direct map, loader-memory reclamation, releases, and phase promotion.
 
 ### OS022 — Minimal scheduler and IPC
 
