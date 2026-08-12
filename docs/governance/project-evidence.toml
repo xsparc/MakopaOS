@@ -12,7 +12,7 @@ source_priority = [
 evidence_is_authoritative = false
 
 [review]
-last_reviewed = "2026-08-11"
+last_reviewed = "2026-08-12"
 review_due = "2026-09-11"
 
 [[objectives]]
@@ -83,6 +83,18 @@ implementation_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "
 verification_refs = ["crates/frame-allocator/src/lib.rs", "tests/test_verify_uefi_boot.py"]
 validation_refs = ["docs/development/testing.md#repository-and-contract-gates", "docs/development/testing.md#uefi-kernel-entry-gate"]
 risk_refs = ["docs/security/threat-model.md#initial-adversaries-and-failures", "docs/security/threat-model.md#required-controls"]
+
+[[requirements]]
+id = "REQ-ADDRESS-SPACE-ISOLATION"
+statement = "Run unprivileged work in an owned address space whose faults and frame teardown preserve the kernel recovery context."
+status = "planned"
+objective_ids = ["OBJ-BOOT-REAL", "OBJ-EXPLICIT-AUTHORITY", "OBJ-TRACEABLE-CHANGE"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os014-address-space-and-fault-containment-decision", "docs/roadmap/implementation-roadmap.md#os021-address-space-isolation"]
+design_refs = ["docs/architecture/overview.md#kernel-core", "docs/architecture/decisions/0003-address-space-and-fault-containment.md"]
+implementation_refs = []
+verification_refs = []
+validation_refs = []
+risk_refs = ["docs/security/threat-model.md#protected-properties", "docs/security/threat-model.md#initial-adversaries-and-failures", "docs/security/threat-model.md#required-controls"]
 
 [[requirements]]
 id = "REQ-EXPLICIT-CAPABILITIES"
@@ -199,6 +211,16 @@ roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os020-physical-frame-all
 approval_ref = "conversation:2026-08-11-approve-os020"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"]
 evidence_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "CONTRIBUTING.md", "README.md", "crates/boot-contract/src/validate.rs", "crates/frame-allocator/Cargo.toml", "crates/frame-allocator/src/lib.rs", "docs/development/testing.md", "docs/security/threat-model.md", "kernel/Cargo.toml", "kernel/linker.ld", "kernel/src/main.rs", "scripts/verify_uefi_boot.py", "tests/test_verify_uefi_boot.py"]
+
+[[work_items]]
+id = "OS014-ADDRESS-SPACE-DECISION"
+title = "Select the first address-space and fault-containment boundary"
+status = "closed"
+requirement_ids = ["REQ-ADDRESS-SPACE-ISOLATION"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os014-address-space-and-fault-containment-decision"]
+approval_ref = "conversation:2026-08-12-approve-os014"
+acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os014-address-space-and-fault-containment-decision"]
+evidence_refs = ["docs/architecture/decisions/0003-address-space-and-fault-containment.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md", "docs/security/threat-model.md"]
 
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
@@ -319,6 +341,16 @@ observed_on = "2026-08-11"
 reviewed_on = "2026-08-11"
 review_due = "2026-09-11"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"
+
+[[research_decisions]]
+id = "RSH-OS014-ADDRESS-SPACE-LIFECYCLE-2026Q3"
+finding = "Current x86-64, stable Rust, paging-invalidation, and comparable-kernel evidence supports an owned recovery root, stable assembly exception trampolines, exact user-fault classification, and unmap and invalidation before frame reuse."
+disposition = "adopted"
+source_urls = ["https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html", "https://doc.rust-lang.org/beta/unstable-book/language-features/abi-x86-interrupt.html", "https://docs.rs/x86_64/latest/x86_64/structures/paging/mapper/index.html", "https://docs.kernel.org/next/x86/tlb.html", "https://docs.sel4.systems/releases/sel4/16.0.0.html"]
+observed_on = "2026-08-12"
+reviewed_on = "2026-08-12"
+review_due = "2026-09-12"
+decision_ref = "docs/architecture/decisions/0003-address-space-and-fault-containment.md"
 
 [[research_decisions]]
 id = "RSH-OS012-FRAMEBUFFER-2026Q3"
