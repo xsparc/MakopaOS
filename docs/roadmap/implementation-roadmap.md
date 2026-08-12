@@ -1,8 +1,8 @@
 # MakopaOS implementation roadmap
 
 - Status: Active; item states are recorded below
-- Baseline: `277c0bc7126f8a4c33a829ea37b267885f7c0bb8`
-- Updated: 2026-08-12
+- Baseline: `315b97fc697aa4de7e3c8cc138a0f5e367090888`
+- Updated: 2026-08-13
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
 items describe sequence, not implementation authority. Each item should ship in
@@ -287,16 +287,59 @@ Non-scope: multiple tasks, scheduling, IPC, capabilities, asynchronous
 interrupts, SMP, PCID, global mappings, huge pages, LA57, a physical-memory
 direct map, loader-memory reclamation, releases, and phase promotion.
 
+### OS015 — Cooperative scheduler and inline-IPC decision
+
+Status: Closed
+
+Depends on: OS021
+
+Record the complete task-context, cooperative scheduling, DPL3 trap, fixed
+task-state, and bounded IPC contract required before OS022 runs two live user
+address spaces.
+
+Decision:
+[ADR-0004](../architecture/decisions/0004-cooperative-scheduler-and-inline-ipc.md)
+selects two fixed task slots, a deterministic FIFO run queue, one DPL3
+`int 0x80` ABI, complete integer-task context switching through the owned
+recovery root, and one kernel-owned endpoint carrying a single inline `u64`
+from its fixed sender to its fixed receiver.
+
+Acceptance: the accepted decision defines `Ready`, `Running`,
+`BlockedReceive`, `Exited`, and `Dead` transitions; complete register and
+privilege-frame preservation; recovery-root-first trap dispatch; state-
+preserving ABI rejections; mailbox full, block, wake, peer-exit, and teardown
+semantics; and the host, disassembly, and pinned one-vCPU QEMU evidence OS022
+must provide.
+
+Non-scope: code, dependencies, CI changes, boot behavior, task or IPC
+implementation, timer preemption, asynchronous interrupts, SMP, dynamic task
+or endpoint allocation, handles, capabilities, shared memory, byte buffers,
+releases, and phase promotion. OS022 implements the accepted contract without
+changing the decision.
+
 ### OS022 — Minimal scheduler and IPC
 
 Status: Proposed
 
-Depends on: OS021
+Depends on: OS015
 
-Run two user tasks and exchange a bounded message through one kernel endpoint.
+Implement ADR-0004's cooperative scheduler for exactly two owned user address
+spaces and exchange one inline `u64` through its fixed single-slot endpoint.
 
-Acceptance: message ordering and bounds are covered by host tests and a QEMU
-scenario with a deterministic transcript.
+Acceptance: host state-machine tests cover complete integer contexts,
+deterministic FIFO transitions, block and wakeup, exact ABI rejections,
+peer-exit behavior, and recovery-root-first reverse-order teardown. Disassembly
+proves complete trap capture and non-returning `iretq` resume. The existing
+pinned QEMU `qemu64` one-vCPU gate preserves the prior transcripts, executes the
+declared receiver-block, sender-wake, transfer, exit, and teardown order, and
+emits `MakopaOS ipc v1 ok cooperative-two-task` only after all task frames and
+endpoint state are gone.
+
+Non-scope: timer preemption, asynchronous interrupts, SMP, priorities,
+fairness beyond the fixed FIFO trace, arbitrary user binaries, SIMD or user
+TLS, dynamic task or endpoint allocation, multiple queued messages, byte or
+pointer payloads, shared memory, handles, capabilities, releases, and phase
+promotion.
 
 ## Phase 3: Explicit authority
 
