@@ -383,7 +383,7 @@ impl FrameLedger {
     }
 
     fn push(&mut self, frame: OwnedFrame) -> Result<(), OwnerError> {
-        if frame.physical_start == 0 || !frame.physical_start.is_multiple_of(PAGE_SIZE) {
+        if !frame.physical_start.is_multiple_of(PAGE_SIZE) {
             return Err(OwnerError::InvalidFrame);
         }
         if self
@@ -1103,10 +1103,11 @@ mod tests {
     #[test]
     fn fragmented_frames_are_returned_by_ownership_order_not_address() {
         let frames = [
-            0x91_000, 0x23_000, 0xe5_000, 0x47_000, 0xb9_000, 0x6b_000, 0xfd_000,
+            0, 0x23_000, 0xe5_000, 0x47_000, 0xb9_000, 0x6b_000, 0xfd_000,
         ];
         let mut backend = ModelBackend::with_frames(&frames);
         let owner = construct_address_space(8, &mut backend).unwrap();
+        assert_eq!(Some(0), owner.root());
         let dead = teardown_checked(owner, &mut backend).unwrap();
 
         assert_eq!(LifecycleState::Dead, dead.state());

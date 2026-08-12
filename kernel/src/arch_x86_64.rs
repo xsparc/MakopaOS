@@ -705,10 +705,9 @@ extern "sysv64" fn isolation_entry() -> ! {
     if owner.activate().is_err() {
         crate::kernel_failure("address-space activation")
     }
-    let task_root = owner.root().unwrap_or(0);
-    if task_root == 0 {
-        crate::kernel_failure("task root missing")
-    }
+    let task_root = owner
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("task root missing"));
 
     let context = unsafe { &mut *ACTIVE_CONTEXT.0.get() };
     *context = ActiveContext {
@@ -1012,7 +1011,7 @@ fn with_temporary_frame<T>(
     frame: u64,
     operation: impl FnOnce(&mut [u8]) -> Result<T, IsolationError>,
 ) -> Result<T, IsolationError> {
-    if frame == 0 || !frame.is_multiple_of(PAGE_SIZE) {
+    if !frame.is_multiple_of(PAGE_SIZE) {
         return Err(IsolationError::InvalidMapping);
     }
     let state = unsafe { *RECOVERY_STATE.0.get() };
