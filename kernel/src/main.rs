@@ -1,6 +1,8 @@
 #![no_main]
 #![no_std]
 
+mod arch_x86_64;
+
 use core::arch::asm;
 use core::cell::UnsafeCell;
 use core::fmt::{self, Write};
@@ -79,6 +81,7 @@ pub unsafe extern "sysv64" fn kernel_entry(handoff: *const BootHandoffV1) -> ! {
         let _ = serial.write_str("MakopaOS boot error: invalid handoff\r\n");
         exit_qemu(QEMU_FAILURE);
     }
+    let has_framebuffer = handoff.header.flags & FRAMEBUFFER_PRESENT != 0;
 
     // SAFETY: kernel_entry is the only execution path, interrupts remain
     // disabled, and no reference to this singleton exists elsewhere. The
@@ -108,14 +111,50 @@ pub unsafe extern "sysv64" fn kernel_entry(handoff: *const BootHandoffV1) -> ! {
         let _ = serial.write_str("MakopaOS boot error: frame reuse mismatch\r\n");
         exit_qemu(QEMU_FAILURE);
     }
+    if frame_allocator.free_frame(frame_b).is_err() || frame_allocator.free_frame(reused).is_err() {
+        let _ = serial.write_str("MakopaOS boot error: frame probe restore\r\n");
+        exit_qemu(QEMU_FAILURE);
+    }
 
     let _ = serial.write_str("MakopaOS 0.1.0\r\n");
-    if handoff.header.flags & FRAMEBUFFER_PRESENT != 0 {
+    if has_framebuffer {
         let _ = serial.write_str("MakopaOS handoff v1 ok framebuffer\r\n");
     } else {
         let _ = serial.write_str("MakopaOS handoff v1 ok no-framebuffer\r\n");
     }
     let _ = serial.write_str("MakopaOS frames v1 ok reuse\r\n");
+    if unsafe { arch_x86_64::prepare_recovery_context() }.is_err() {
+        kernel_failure("recovery context preparation")
+    }
+    unsafe { arch_x86_64::activate_recovery_context() }
+}
+
+/// Return the single OS021 allocator owner after the caller has ended any
+/// earlier borrow and while interrupts remain disabled.
+///
+/// # Safety
+///
+/// The caller must be the unique kernel execution path and must not retain the
+/// returned reference across another call to this function.
+pub(crate) unsafe fn frame_allocator() -> &'static mut FrameAllocator {
+    // SAFETY: upheld by the caller and by the OS021 single-core, non-reentrant
+    // execution boundary.
+    unsafe { &mut *FRAME_ALLOCATOR.0.get() }
+}
+
+pub(crate) fn kernel_failure(reason: &str) -> ! {
+    let mut serial = SerialPort::new(KERNEL_SERIAL);
+    serial.initialize();
+    let _ = serial.write_str("MakopaOS isolation error: ");
+    let _ = serial.write_str(reason);
+    let _ = serial.write_str("\r\n");
+    exit_qemu(QEMU_FAILURE)
+}
+
+pub(crate) fn isolation_success() -> ! {
+    let mut serial = SerialPort::new(KERNEL_SERIAL);
+    serial.initialize();
+    let _ = serial.write_str("MakopaOS isolation v1 ok user-fault-contained\r\n");
     exit_qemu(QEMU_SUCCESS)
 }
 

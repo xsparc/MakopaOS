@@ -38,6 +38,7 @@ jobs:
           rustup toolchain install 1.97.1 \
             --profile minimal \
             --component rustfmt \
+            --component llvm-tools-preview \
             --target x86_64-unknown-none,x86_64-unknown-uefi
 
       - name: Run unit tests
@@ -47,6 +48,7 @@ jobs:
         run: |
           cargo +1.97.1 fmt --all -- --check
           cargo +1.97.1 test --locked \
+            -p makopa-address-space \
             -p makopa-boot-contract \
             -p makopa-frame-allocator \
             -p makopa-kernel-image
@@ -64,6 +66,20 @@ jobs:
 
       - name: Build UEFI boot directory
         run: python3 scripts/build_uefi.py
+
+      - name: Verify stable exception boundary
+        run: |
+          cargo +1.97.1 tree --locked -e features \
+            -p makopa-kernel \
+            --target x86_64-unknown-none | \
+            python3 scripts/verify_dependency_features.py -
+          RUST_SYSROOT="$(rustc +1.97.1 --print sysroot)"
+          LLVM_OBJDUMP="$(find "$RUST_SYSROOT/lib/rustlib" \
+            -path '*/bin/llvm-objdump' -print -quit)"
+          test -n "$LLVM_OBJDUMP"
+          python3 scripts/verify_exception_trampolines.py \
+            --objdump "$LLVM_OBJDUMP" \
+            --kernel target/x86_64-unknown-none/release/makopa-kernel
 
       - name: Verify UEFI handoff boot
         run: |

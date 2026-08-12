@@ -8,6 +8,7 @@ from scripts.verify_uefi_boot import (
     EXPECTED_SERIAL,
     FRAME_SERIAL,
     HANDOFF_SERIAL,
+    ISOLATION_SERIAL,
     VERSION_SERIAL,
     boot_violations,
     qemu_command,
@@ -41,9 +42,10 @@ class VerifyUefiBootTests(unittest.TestCase):
         errors = boot_violations(EXPECTED_EXIT_CODE, transcript)
         self.assertTrue(any("transcript mismatch" in error for error in errors))
 
-    def test_expected_transcript_ends_with_frame_reuse_record(self) -> None:
-        self.assertTrue(EXPECTED_SERIAL.endswith(FRAME_SERIAL))
+    def test_expected_transcript_ends_with_isolation_record(self) -> None:
+        self.assertTrue(EXPECTED_SERIAL.endswith(ISOLATION_SERIAL))
         self.assertIn(HANDOFF_SERIAL, EXPECTED_SERIAL)
+        self.assertIn(FRAME_SERIAL, EXPECTED_SERIAL)
 
     def test_rejects_validated_handoff_without_frame_reuse_evidence(self) -> None:
         errors = boot_violations(
@@ -87,6 +89,9 @@ class VerifyUefiBootTests(unittest.TestCase):
             if argument == "-serial"
         ]
         self.assertEqual(["stdio"], serial_channels)
+
+        self.assertEqual("qemu64", command[command.index("-cpu") + 1])
+        self.assertEqual("1", command[command.index("-smp") + 1])
 
 
 if __name__ == "__main__":

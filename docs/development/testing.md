@@ -13,6 +13,7 @@ python scripts/check_project_evidence.py
 python scripts/check_project_evidence.py --as-of YYYY-MM-DD --strict
 cargo +1.97.1 fmt --all -- --check
 cargo +1.97.1 test --locked \
+  -p makopa-address-space \
   -p makopa-boot-contract \
   -p makopa-frame-allocator \
   -p makopa-kernel-image
@@ -26,6 +27,12 @@ usable-only seeding, lowest-address allocation, explicit exhaustion, sorted
 coalescing, fragmentation capacity, state-preserving errors, source lifetime,
 and exhaustive small sequences against a reference model. Its two 1,024-entry
 extent tables occupy 32,784 bytes, below the reviewed 40 KiB static limit.
+The ADR-0003 address-space tests cover fixed W^X/NX mappings, canonical and
+guarded bounds, fragmented frame ownership, lifecycle and generation checks,
+every forward construction failure, reverse-order rollback and teardown,
+temporary-window clearing, reachability proof before return, and retained
+ownership when a frame return is rejected. Its task ledger remains bounded to
+16 entries and the implemented probe owns seven frames.
 Normalization remains capped at 1,024 fixed-size region records backed by a 24
 KiB loader-owned buffer. The static evidence check validates schema,
 traceability, local references, and accepted-decision coverage. The dated
@@ -55,6 +62,26 @@ CI provisions Rust `1.97.1`, `uefi` `0.39.0`, QEMU
 from Ubuntu snapshot `20260810T000000Z`; the source definition is tracked at
 `ci/ubuntu-snapshot.sources`.
 
+The kernel pins `x86_64` `0.15.5` without default or nightly-only features.
+The stable exception boundary is checked separately from host behavior:
+
+```sh
+cargo +1.97.1 tree --locked -e features \
+  -p makopa-kernel --target x86_64-unknown-none | \
+  python scripts/verify_dependency_features.py -
+python scripts/verify_exception_trampolines.py \
+  --objdump /path/to/rust-sysroot/lib/rustlib/HOST/bin/llvm-objdump \
+  --kernel target/x86_64-unknown-none/release/makopa-kernel
+```
+
+The feature check requires only the crate's stable `instructions` feature and
+rejects `default`, `nightly`, `abi_x86_interrupt`, or `step_trait`. The
+disassembly check verifies the owned page-fault, general-protection, and
+double-fault naked trampolines, early `CR2` capture, non-returning recovery
+switch, user entry, and absence of compiler-generated returns at the exception
+boundary. CI obtains `llvm-objdump` from the pinned stable toolchain's
+`llvm-tools-preview` component; no nightly compiler is installed.
+
 ```sh
 python scripts/build_uefi.py
 python scripts/verify_uefi_boot.py \
@@ -71,8 +98,9 @@ both:
 
 - the exact kernel transcript `MakopaOS 0.1.0\r\n`, followed by
   `MakopaOS handoff v1 ok framebuffer\r\n` and
-  `MakopaOS frames v1 ok reuse\r\n`, appears once as the terminal serial
-  sequence after any firmware console records;
+  `MakopaOS frames v1 ok reuse\r\n`, followed by
+  `MakopaOS isolation v1 ok user-fault-contained\r\n`, appears once as the
+  terminal serial sequence after any firmware console records;
 - QEMU process status `33`, produced by writing success value `0x10` to port
   `0xf4`.
 
@@ -80,8 +108,13 @@ The handoff record proves the kernel accepted a non-empty, aligned, ordered,
 non-overlapping normalized map and RGB or BGR framebuffer metadata. The frame
 record proves the kernel then initialized its owned allocator, allocated frames
 A and B, freed A, and received A from the next allocation. The scenario does
-not reclaim loader-owned memory, change the inherited stack or page tables,
-exercise concurrent access, or claim real-hardware compatibility.
+not stop there: QEMU is explicitly started with `-cpu qemu64 -smp 1`, and the
+isolation record proves that the kernel switched away from inherited firmware
+page tables, entered the fixed CPL-3 probe, classified its exact invalid write,
+recovered without resuming it, and returned every task-owned frame after
+unmapping and invalidation. The scenario does not reclaim loader-owned memory,
+exercise asynchronous interrupts or concurrent access, load arbitrary user
+binaries, or claim real-hardware compatibility.
 
 ## Dependency audit
 
@@ -91,7 +124,8 @@ CI installs `cargo-audit` `0.22.2` from its published lockfile and runs:
 cargo +1.97.1 audit --deny warnings
 ```
 
-This audits the committed `Cargo.lock`. It does not imply compiler, firmware,
+This audits the committed `Cargo.lock`, including the exact `x86_64` `0.15.5`
+resolution. It does not imply compiler, firmware,
 or system-package provenance beyond the inputs pinned by ADR-0001.
 
 ## Validation language

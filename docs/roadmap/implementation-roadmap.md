@@ -1,7 +1,7 @@
 # MakopaOS implementation roadmap
 
 - Status: Active; item states are recorded below
-- Baseline: `95e1ad7e8be8435ee2a5777651e154c06e0e66cd`
+- Baseline: `277c0bc7126f8a4c33a829ea37b267885f7c0bb8`
 - Updated: 2026-08-12
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
@@ -252,7 +252,7 @@ decision.
 
 ### OS021 — Address-space isolation
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS014
 
@@ -269,6 +269,19 @@ returns to the recovery context without resuming the faulting instruction,
 tears down every task-owned frame, and emits the exact terminal record
 `MakopaOS isolation v1 ok user-fault-contained` before the existing success
 exit.
+
+Delivery: the stable-only kernel pins `x86_64` `0.15.5` with only its
+`instructions` feature, builds a bounded four-level recovery root, switches to
+guarded recovery and dedicated double-fault IST stacks, and installs
+CPL-aware stable naked exception trampolines. One seven-frame task address
+space runs the fixed ring-3 write probe. The page-fault path accepts only the
+active task root, CPL 3, target address, and `0x06` error code, switches back to
+the recovery root without resuming the probe, and performs reverse-order
+unmapping, TLB invalidation, reachability checks, and frame return. All
+construction failures use the same rollback order. The existing CI job adds
+host lifecycle and rollback tests, exact dependency-feature and disassembly
+checks, the locked dependency audit, and a QEMU `qemu64` one-vCPU boot that
+restores the OS020 frame transcript before the isolation terminal record.
 
 Non-scope: multiple tasks, scheduling, IPC, capabilities, asynchronous
 interrupts, SMP, PCID, global mappings, huge pages, LA57, a physical-memory

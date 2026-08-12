@@ -58,8 +58,9 @@ architecture nevertheless treats isolation claims as testable contracts.
   `MEMORY_USABLE` records, with no retained handoff reference;
 - checked lowest-address allocation and state-preserving rejection of invalid
   or capacity-exceeding frame returns;
-- one reviewed `UnsafeCell` singleton boundary while interrupts remain disabled
-  and no scheduler or reentrant allocator caller exists;
+- reviewed `UnsafeCell` singleton boundaries for the frame allocator and
+  fixed kernel paging state while interrupts remain disabled and no scheduler,
+  SMP, or reentrant caller exists;
 - a kernel-owned four-level recovery root that never adopts inherited UEFI page
   tables, enforces supervisor W^X and NX mappings with `CR0.WP`, and uses
   guarded recovery and double-fault stacks;
@@ -86,3 +87,14 @@ identity, secure boot, hardware attestation, SMP TLB shootdowns, PCID, global
 mappings, SMEP, and SMAP remain deferred until the relevant subsystem exists.
 A roadmap item that introduces one of those boundaries must update this
 document before claiming coverage.
+
+## OS021 residual boundary
+
+The current containment proof is deliberately narrow: one fixed probe runs on
+one emulated `qemu64` CPU with maskable interrupts disabled. The recovery root,
+guard pages, CPL-aware exception parsing, dedicated double-fault IST path, and
+reverse-order teardown are exercised by host and QEMU gates, but they do not
+establish scheduler safety, interrupt concurrency, SMP TLB coherence, arbitrary
+user-binary loading, or real-hardware compatibility. Any expansion beyond the
+single synchronous probe must first add the missing synchronization and
+cross-context invalidation contract.
