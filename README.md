@@ -25,9 +25,13 @@ a capability-oriented runtime with a small, auditable trusted core.
 - cooperatively switches complete integer contexts between two fixed ring-3
   tasks through a DPL3 trap;
 - transfers one inline `u64` through a fixed single-slot endpoint and tears
-  both address spaces down in reverse ownership order; and
+  both address spaces down in reverse ownership order;
+- resolves endpoint access through one fixed 16-slot capability table per task,
+  with typed rights, subset-only same-task duplication, independent close,
+  generation-tagged stale rejection, and handle-first teardown; and
 - emits deterministic version, handoff, frame-reuse, fault-containment, and
-  cooperative-IPC records over the serial console before exiting QEMU.
+  cooperative-IPC and capability-attenuation records over the serial console
+  before exiting QEMU.
 
 ## Build and verify
 

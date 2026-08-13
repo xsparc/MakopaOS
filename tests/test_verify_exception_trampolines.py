@@ -86,15 +86,33 @@ def valid_disassembly() -> str:
   10035e:\tmovq 0x50(%r11), %r11
   100362:\tiretq
 0000000000100400 <makopa_sender_probe>:
-  100400:\tmovabsq $0x4d414b4f5041, %rsi
+  100400:\tmovl $0x4, %eax
+  100405:\tmovl $0x10, %edi
   10040a:\tint\t$0x80
-  10040c:\tint\t$0x80
-  10040e:\thlt
+  10040c:\tcmpq $0x11, %rdx
+  100410:\tmovl $0x5, %eax
+  100415:\tint\t$0x80
+  100417:\tmovl $0x1, %eax
+  10041c:\tmovabsq $0x4d414b4f5041, %rsi
+  100426:\tint\t$0x80
+  100428:\tcmpq $0x6, %rax
+  10042c:\tmovl $0x1, %eax
+  100431:\tint\t$0x80
+  100433:\tmovl $0x5, %eax
+  100438:\tint\t$0x80
+  10043a:\tmovl $0x3, %eax
+  10043f:\tint\t$0x80
+  100441:\thlt
 0000000000100500 <makopa_receiver_probe>:
-  100500:\tmovabsq $0x4d414b4f5041, %rax
-  10050a:\tint\t$0x80
-  10050c:\tint\t$0x80
-  10050e:\thlt
+  100500:\tmovl $0x2, %eax
+  100505:\tmovl $0x10, %edi
+  10050a:\tmovabsq $0x4d414b4f5041, %rdx
+  100514:\tint\t$0x80
+  100511:\tmovl $0x5, %eax
+  100516:\tint\t$0x80
+  100518:\tmovl $0x3, %eax
+  10051d:\tint\t$0x80
+  10051f:\thlt
 '''
 
 
@@ -145,6 +163,24 @@ class VerifyExceptionTrampolinesTests(unittest.TestCase):
         )
         errors = disassembly_violations(disassembly)
         self.assertTrue(any("recovery CR3" in error for error in errors))
+
+    def test_rejects_changed_capability_probe_operation_order(self) -> None:
+        disassembly = valid_disassembly().replace(
+            "  100410:\tmovl $0x5, %eax\n",
+            "  100410:\tmovl $0x4, %eax\n",
+        )
+        errors = disassembly_violations(disassembly)
+        self.assertTrue(any("trap operation order" in error for error in errors))
+
+    def test_rejects_missing_exact_stale_handle_status(self) -> None:
+        disassembly = valid_disassembly().replace(
+            "  100428:\tcmpq $0x6, %rax\n",
+            "  100428:\tcmpq $0x5, %rax\n",
+        )
+        errors = disassembly_violations(disassembly)
+        self.assertIn(
+            "sender probe does not require exact stale-handle status 6", errors
+        )
 
 
 if __name__ == "__main__":

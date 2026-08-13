@@ -96,7 +96,8 @@ to physical attacks, hostile firmware, side channels, or a compromised compiler.
 
 Security invariants:
 
-- capability identifiers cannot be guessed or forged;
+- guessing a task-local selector cannot mint a capability-table entry or alter
+  its typed rights;
 - capabilities are scoped, transferable only by policy, and revocable where
   the underlying resource permits it;
 - delegated authority remains attributable to an initiating principal, task,

@@ -17,6 +17,10 @@ TRAMPOLINES = (
 TASK_TRAMPOLINE = "makopa_task_trap_trampoline"
 TASK_RESUME = "makopa_resume_task"
 PROBES = ("makopa_sender_probe", "makopa_receiver_probe")
+PROBE_OPERATIONS = {
+    "makopa_sender_probe": (4, 5, 1, 1, 5, 3),
+    "makopa_receiver_probe": (2, 5, 3),
+}
 REQUIRED_SYMBOLS = TRAMPOLINES + (
     "makopa_exception_dispatch",
     "makopa_double_fault_dispatch",
@@ -73,6 +77,21 @@ def symbol_body(disassembly: str, symbol: str) -> str | None:
     )
     match = pattern.search(disassembly)
     return match.group(1) if match else None
+
+
+def trap_operations(body: str) -> tuple[int, ...]:
+    """Recover the immediate RAX operation loaded before each fixed trap."""
+    operations: list[int] = []
+    chunks = body.split("int\t$0x80")
+    for chunk in chunks[:-1]:
+        matches = re.findall(
+            r"\bmov[a-z]*\s+\$(0x[0-9a-f]+|[0-9]+),\s*%(?:e|r)ax\b",
+            chunk,
+        )
+        if not matches:
+            return ()
+        operations.append(int(matches[-1], 0))
+    return tuple(operations)
 
 
 def disassembly_violations(disassembly: str) -> list[str]:
@@ -169,12 +188,31 @@ def disassembly_violations(disassembly: str) -> list[str]:
 
     for probe in PROBES:
         body = bodies.get(probe, "")
-        if body.count("int\t$0x80") != 2:
-            errors.append(f"{probe} does not contain exactly two vector 0x80 traps")
+        expected_operations = PROBE_OPERATIONS[probe]
+        if body.count("int\t$0x80") != len(expected_operations):
+            errors.append(
+                f"{probe} does not contain exactly {len(expected_operations)} "
+                "vector 0x80 traps"
+            )
+        operations = trap_operations(body)
+        if operations != expected_operations:
+            errors.append(
+                f"{probe} trap operation order mismatch: expected "
+                f"{expected_operations!r}, found {operations!r}"
+            )
         if "4d414b4f5041" not in body:
             errors.append(f"{probe} lacks the fixed inline message evidence")
         if "hlt" not in body:
             errors.append(f"{probe} lacks deterministic failure transfer")
+    sender = bodies.get("makopa_sender_probe", "")
+    if not re.search(r"\bcmp[a-z]*\s+\$0x6,\s*%rax\b", sender):
+        errors.append("sender probe does not require exact stale-handle status 6")
+    for selector in ("0x10", "0x11"):
+        if not re.search(rf"\${selector},\s*%(?:e|r)(?:di|dx)\b", sender):
+            errors.append(f"sender probe lacks capability selector evidence {selector}")
+    receiver = bodies.get("makopa_receiver_probe", "")
+    if not re.search(r"\$0x10,\s*%(?:e|r)di\b", receiver):
+        errors.append("receiver probe lacks task-local selector evidence 0x10")
     return errors
 
 
@@ -207,7 +245,7 @@ def main() -> int:
         return 1
     print(
         "verify-exception-trampolines: stable exception, complete task-switch, "
-        "and fixed-probe paths matched"
+        "and capability-probe paths matched"
     )
     return 0
 

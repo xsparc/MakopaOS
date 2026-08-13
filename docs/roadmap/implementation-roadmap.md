@@ -391,7 +391,7 @@ changing the decision.
 
 ### OS030 — Capability handle table
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS016
 
@@ -409,6 +409,17 @@ authority, and emits its terminal record only after both tables and all task,
 endpoint, address-space, and frame references are gone. No test task receives
 ambient device access. The exact record is
 `MakopaOS capabilities v1 ok task-local-attenuation`.
+
+Delivery: the dependency-free task runtime owns one fixed 16-slot table per
+task with `Building`, `Live`, `Closing`, and `Dead` lifecycle checks. Handles
+encode a four-bit slot and monotonic 60-bit generation; close removes the entry
+before increment or permanent retirement. Send and receive now authorize typed
+endpoint references through `SEND` or `RECEIVE`, while same-task duplicate
+requires `DUPLICATE` and accepts only a non-empty subset. The kernel preserves
+the recovery-root boundary, removes all handles and endpoint references before
+unmapping an address space, and publishes `Dead` only after frame return. Host,
+dependency-feature, disassembly, audit, and pinned QEMU evidence remain in the
+single existing CI job; no workflow topology or dependency changed.
 
 Non-scope: cross-task handle transfer, recursive revocation, random or secret
 bearer tokens, dynamic tasks, endpoints, or object storage, policy and
