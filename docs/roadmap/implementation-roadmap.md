@@ -1,7 +1,7 @@
 # MakopaOS implementation roadmap
 
 - Status: Active; item states are recorded below
-- Baseline: `315b97fc697aa4de7e3c8cc138a0f5e367090888`
+- Baseline: `5d5a49de783dae05abbd4abc6f21b458aee640f9`
 - Updated: 2026-08-13
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
@@ -357,16 +357,62 @@ promotion.
 
 ## Phase 3: Explicit authority
 
+### OS016 — Task-local capability-handle decision
+
+Status: Closed
+
+Depends on: OS022
+
+Record the fixed task-local handle-table, typed endpoint reference, rights,
+attenuation, duplication, close, stale-selector, rollback, and teardown
+contract required before OS030 replaces the bootstrap endpoint roles.
+
+Decision:
+[ADR-0005](../architecture/decisions/0005-task-local-capability-handles.md)
+selects one 16-slot table per fixed task, zero-invalid generation-tagged `u64`
+selectors, typed endpoint entries, and `SEND`, `RECEIVE`, and `DUPLICATE`
+rights. Duplication is same-task and subset-only; closes are independent;
+generation exhaustion retires a slot rather than wrapping; and task teardown
+removes handles before endpoint, task, address-space, and frame references.
+
+Acceptance: the accepted decision defines selector encoding and resolution,
+explicit lookup and error precedence, fail-closed slot reuse, lowest-slot
+allocation, subset-only attenuation, independent duplicate lifetime, exact
+publication and teardown ordering, and the host and pinned one-vCPU QEMU
+evidence OS030 must provide. It states that handle integers are task-local
+selectors rather than secret bearer tokens and that table membership is the
+authority boundary.
+
+Non-scope: code, dependencies, CI changes, boot behavior, handle or capability
+implementation, cross-task transfer, recursive revocation, randomness as
+authority, dynamic tasks or objects, policy and approval, effect logging,
+releases, and phase promotion. OS030 implements this accepted contract without
+changing the decision.
+
 ### OS030 — Capability handle table
 
 Status: Proposed
 
-Depends on: OS022
+Depends on: OS016
 
-Add unforgeable task-local handles for IPC endpoints with rights attenuation.
+Implement ADR-0005's fixed task-local capability tables and mediate the OS022
+endpoint through typed handles with monotonic rights attenuation.
 
-Acceptance: tests cover invalid handles, rights reduction, duplication rules,
-and task teardown; no test task receives ambient device access.
+Acceptance: host tests cover exact selector encoding, invalid, cross-task,
+stale, wrong-object, and wrong-right handles; deterministic lowest-slot
+allocation; subset-only attenuation; same-task duplication and independent
+close; all 16 slots; table and generation exhaustion; publication rollback;
+and handle-first task teardown. The pinned QEMU scenario closes a source
+handle, proves its stale rejection, sends through an attenuated duplicate,
+receives through the peer's task-local handle, rejects cross-task numeric
+authority, and emits its terminal record only after both tables and all task,
+endpoint, address-space, and frame references are gone. No test task receives
+ambient device access. The exact record is
+`MakopaOS capabilities v1 ok task-local-attenuation`.
+
+Non-scope: cross-task handle transfer, recursive revocation, random or secret
+bearer tokens, dynamic tasks, endpoints, or object storage, policy and
+approval, effect logging, releases, and phase promotion.
 
 ### OS031 — Policy and approval boundary
 
