@@ -4,6 +4,7 @@ members = [
     "crates/boot-contract",
     "crates/frame-allocator",
     "crates/kernel-image",
+    "crates/task-runtime",
     "kernel",
     "loader",
 ]
@@ -20,6 +21,7 @@ makopa-boot-contract = { path = "crates/boot-contract" }
 makopa-address-space = { path = "crates/address-space" }
 makopa-frame-allocator = { path = "crates/frame-allocator" }
 makopa-kernel-image = { path = "crates/kernel-image" }
+makopa-task-runtime = { path = "crates/task-runtime" }
 x86_64 = { version = "=0.15.5", default-features = false, features = ["instructions"] }
 
 [profile.dev]

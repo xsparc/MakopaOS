@@ -1,4 +1,4 @@
-use core::arch::{asm, naked_asm};
+use core::arch::{asm, global_asm, naked_asm};
 use core::cell::UnsafeCell;
 use core::mem::{offset_of, size_of};
 use core::ptr;
@@ -9,14 +9,23 @@ use makopa_address_space::{
     BootstrapBudget, DOUBLE_FAULT_STACK_BASE, DOUBLE_FAULT_STACK_GUARD_LOWER,
     DOUBLE_FAULT_STACK_GUARD_UPPER, DOUBLE_FAULT_STACK_SIZE, DOUBLE_FAULT_STACK_TOP,
     FaultObservation, FrameRole, INVALID_WRITE_TARGET, LifecycleState, LinkSpec, MappingFlags,
-    OwnedFrame, PAGE_SIZE, RECOVERY_STACK_BASE, RECOVERY_STACK_GUARD_LOWER,
+    OwnedFrame, PAGE_SIZE, PairBuildFailure, RECOVERY_STACK_BASE, RECOVERY_STACK_GUARD_LOWER,
     RECOVERY_STACK_GUARD_UPPER, RECOVERY_STACK_SIZE, RECOVERY_STACK_TOP, SHARED_PML4_INDICES,
     SUPERVISOR_RW_FLAGS, TASK_FRAME_COUNT, TEMPORARY_WINDOW, USER_STACK, USER_STACK_GUARD_LOWER,
     USER_STACK_GUARD_UPPER, USER_STACK_TOP, USER_TEXT, classify_expected_user_fault,
-    construct_address_space, pml1_index, pml2_index, pml3_index, pml4_index, teardown_checked,
-    validate_fixed_layout,
+    construct_address_space, construct_address_space_pair, pml1_index, pml2_index, pml3_index,
+    pml4_index, teardown_checked, validate_fixed_layout,
 };
 use makopa_frame_allocator::FrameAllocator;
+use makopa_task_runtime::{
+    CONTEXT_CS_OFFSET, CONTEXT_R8_OFFSET, CONTEXT_R9_OFFSET, CONTEXT_R10_OFFSET,
+    CONTEXT_R11_OFFSET, CONTEXT_R12_OFFSET, CONTEXT_R13_OFFSET, CONTEXT_R14_OFFSET,
+    CONTEXT_R15_OFFSET, CONTEXT_RAX_OFFSET, CONTEXT_RBP_OFFSET, CONTEXT_RBX_OFFSET,
+    CONTEXT_RCX_OFFSET, CONTEXT_RDI_OFFSET, CONTEXT_RDX_OFFSET, CONTEXT_RFLAGS_OFFSET,
+    CONTEXT_RIP_OFFSET, CONTEXT_ROOT_OFFSET, CONTEXT_RSI_OFFSET, CONTEXT_RSP_OFFSET,
+    CONTEXT_SS_OFFSET, ContextPolicy, DPL3_INTERRUPT_GATE_ATTRIBUTES, RECEIVER_TASK_ID, Runtime,
+    SENDER_TASK_ID, TaskContextV1, TaskState, TrapFrameV1, TrapOutcome, version_one_cr4_allowed,
+};
 use x86_64::{VirtAddr, instructions::tlb};
 
 const ENTRY_ADDRESS_MASK: u64 = 0x000f_ffff_ffff_f000;
@@ -38,22 +47,164 @@ const TSS_SELECTOR: u16 = 0x28;
 const PAGE_FAULT_VECTOR: u8 = 14;
 const GENERAL_PROTECTION_VECTOR: u8 = 13;
 const DOUBLE_FAULT_VECTOR: u8 = 8;
+const TASK_TRAP_VECTOR: u8 = 0x80;
 const DOUBLE_FAULT_IST: u8 = 1;
 const TASK_ID: u64 = 1;
 const TASK_GENERATION: u64 = 1;
+const SENDER_GENERATION: u64 = 2;
+const RECEIVER_GENERATION: u64 = 3;
 
-const USER_PROBE: [u8; 15] = [
+const LEGACY_USER_PROBE: [u8; 15] = [
     0x48, 0xb8, // movabs rax, immediate
     0x00, 0x00, 0x60, 0x00, 0x80, 0x00, 0x00, 0x00, // invalid target
     0xc6, 0x00, 0x01, // mov byte ptr [rax], 1
     0x0f, 0x0b, // ud2 if the write unexpectedly resumes
 ];
 
+global_asm!(
+    r#"
+    .section .text.user_probes,"ax",@progbits
+    .balign 16
+    .global makopa_sender_probe
+    .type makopa_sender_probe,@function
+makopa_sender_probe:
+    mov ebx, 0x1101
+    mov ecx, 0x1102
+    mov ebp, 0x1103
+    mov r8d, 0x1108
+    mov r9d, 0x1109
+    mov r10d, 0x1110
+    mov r11d, 0x1111
+    mov r12d, 0x1112
+    mov r13d, 0x1113
+    mov r14d, 0x1114
+    mov r15d, 0x1115
+    push 0x3131
+    mov eax, 1
+    mov edi, 1
+    mov rsi, 0x00004d414b4f5041
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsender_failure
+    cmp rdx, 0
+    jne .Lsender_failure
+    mov rax, 0x00004d414b4f5041
+    cmp rsi, rax
+    jne .Lsender_failure
+    cmp rdi, 1
+    jne .Lsender_failure
+    cmp ebx, 0x1101
+    jne .Lsender_failure
+    cmp ecx, 0x1102
+    jne .Lsender_failure
+    cmp ebp, 0x1103
+    jne .Lsender_failure
+    cmp r8d, 0x1108
+    jne .Lsender_failure
+    cmp r9d, 0x1109
+    jne .Lsender_failure
+    cmp r10d, 0x1110
+    jne .Lsender_failure
+    cmp r11d, 0x1111
+    jne .Lsender_failure
+    cmp r12d, 0x1112
+    jne .Lsender_failure
+    cmp r13d, 0x1113
+    jne .Lsender_failure
+    cmp r14d, 0x1114
+    jne .Lsender_failure
+    cmp r15d, 0x1115
+    jne .Lsender_failure
+    cmp qword ptr [rsp], 0x3131
+    jne .Lsender_failure
+    add rsp, 8
+    mov eax, 3
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+.Lsender_failure:
+    hlt
+    .size makopa_sender_probe, .-makopa_sender_probe
+    .global makopa_sender_probe_end
+makopa_sender_probe_end:
+
+    .balign 16
+    .global makopa_receiver_probe
+    .type makopa_receiver_probe,@function
+makopa_receiver_probe:
+    mov ebx, 0x2201
+    mov ecx, 0x2202
+    mov ebp, 0x2203
+    mov r8d, 0x2208
+    mov r9d, 0x2209
+    mov r10d, 0x2210
+    mov r11d, 0x2211
+    mov r12d, 0x2212
+    mov r13d, 0x2213
+    mov r14d, 0x2214
+    mov r15d, 0x2215
+    push 0x4242
+    mov eax, 2
+    mov edi, 1
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lreceiver_failure
+    mov rax, 0x00004d414b4f5041
+    cmp rdx, rax
+    jne .Lreceiver_failure
+    cmp rdi, 1
+    jne .Lreceiver_failure
+    cmp rsi, 0
+    jne .Lreceiver_failure
+    cmp ebx, 0x2201
+    jne .Lreceiver_failure
+    cmp ecx, 0x2202
+    jne .Lreceiver_failure
+    cmp ebp, 0x2203
+    jne .Lreceiver_failure
+    cmp r8d, 0x2208
+    jne .Lreceiver_failure
+    cmp r9d, 0x2209
+    jne .Lreceiver_failure
+    cmp r10d, 0x2210
+    jne .Lreceiver_failure
+    cmp r11d, 0x2211
+    jne .Lreceiver_failure
+    cmp r12d, 0x2212
+    jne .Lreceiver_failure
+    cmp r13d, 0x2213
+    jne .Lreceiver_failure
+    cmp r14d, 0x2214
+    jne .Lreceiver_failure
+    cmp r15d, 0x2215
+    jne .Lreceiver_failure
+    cmp qword ptr [rsp], 0x4242
+    jne .Lreceiver_failure
+    add rsp, 8
+    mov eax, 3
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+.Lreceiver_failure:
+    hlt
+    .size makopa_receiver_probe, .-makopa_receiver_probe
+    .global makopa_receiver_probe_end
+makopa_receiver_probe_end:
+    .previous
+"#
+);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IsolationError {
     InvalidLayout,
     UnsupportedCpu,
     UnexpectedLa57,
+    UnexpectedFsgsbase,
     InvalidKernelLayout,
     BootstrapPoolExhausted,
     DuplicateMapping,
@@ -93,6 +244,7 @@ impl BootstrapStorage {
 #[repr(C, align(4096))]
 struct PageBytes<const N: usize>([u8; N]);
 
+#[repr(transparent)]
 struct StaticCell<T>(UnsafeCell<T>);
 
 impl<T> StaticCell<T> {
@@ -169,12 +321,12 @@ impl IdtEntry {
         reserved: 0,
     };
 
-    fn interrupt_gate(handler: u64, ist: u8) -> Self {
+    fn interrupt_gate(handler: u64, ist: u8, type_attributes: u8) -> Self {
         Self {
             offset_low: handler as u16,
             selector: KERNEL_CODE_SELECTOR,
             ist: ist & 0x07,
-            type_attributes: 0x8e,
+            type_attributes,
             offset_middle: (handler >> 16) as u16,
             offset_high: (handler >> 32) as u32,
             reserved: 0,
@@ -230,6 +382,49 @@ static ACTIVE_CONTEXT: StaticCell<ActiveContext> = StaticCell::new(ActiveContext
 
 #[unsafe(link_section = ".data.task_owner")]
 static TASK_OWNER: StaticCell<Option<AddressSpaceOwner>> = StaticCell::new(None);
+
+struct TaskOwners {
+    sender: Option<AddressSpaceOwner>,
+    receiver: Option<AddressSpaceOwner>,
+}
+
+impl TaskOwners {
+    const fn new() -> Self {
+        Self {
+            sender: None,
+            receiver: None,
+        }
+    }
+
+    fn get_mut(&mut self, task: u64) -> Option<&mut AddressSpaceOwner> {
+        match task {
+            SENDER_TASK_ID => self.sender.as_mut(),
+            RECEIVER_TASK_ID => self.receiver.as_mut(),
+            _ => None,
+        }
+    }
+
+    fn take(&mut self, task: u64) -> Option<AddressSpaceOwner> {
+        match task {
+            SENDER_TASK_ID => self.sender.take(),
+            RECEIVER_TASK_ID => self.receiver.take(),
+            _ => None,
+        }
+    }
+
+    const fn is_empty(&self) -> bool {
+        self.sender.is_none() && self.receiver.is_none()
+    }
+}
+
+#[unsafe(link_section = ".data.task_owners")]
+static TASK_OWNERS: StaticCell<TaskOwners> = StaticCell::new(TaskOwners::new());
+
+#[unsafe(link_section = ".data.task_runtime")]
+static TASK_RUNTIME: StaticCell<Option<Runtime>> = StaticCell::new(None);
+
+#[unsafe(link_section = ".bss.current_task")]
+static CURRENT_TASK: StaticCell<u64> = StaticCell::new(0);
 
 #[repr(C, packed)]
 struct DescriptorTablePointer {
@@ -293,6 +488,10 @@ unsafe extern "C" {
     static __bss_end: u8;
     static __kernel_start: u8;
     static __kernel_end: u8;
+    static makopa_sender_probe: u8;
+    static makopa_sender_probe_end: u8;
+    static makopa_receiver_probe: u8;
+    static makopa_receiver_probe_end: u8;
 }
 
 struct BootstrapBuilder {
@@ -615,6 +814,9 @@ fn validate_cpu_state() -> Result<(), IsolationError> {
     if cr4 & CR4_LA57 != 0 {
         return Err(IsolationError::UnexpectedLa57);
     }
+    if !version_one_cr4_allowed(cr4) {
+        return Err(IsolationError::UnexpectedFsgsbase);
+    }
     Ok(())
 }
 
@@ -751,6 +953,376 @@ extern "sysv64" fn isolation_continuation() -> ! {
     crate::isolation_success()
 }
 
+fn task_context_policy() -> ContextPolicy {
+    ContextPolicy {
+        text_start: USER_TEXT,
+        text_end: USER_TEXT + PAGE_SIZE,
+        stack_start: USER_STACK,
+        stack_end: USER_STACK_TOP,
+        user_code: u64::from(USER_CODE_SELECTOR),
+        user_data: u64::from(USER_DATA_SELECTOR),
+    }
+}
+
+pub unsafe fn run_scheduler() -> ! {
+    let recovery = unsafe { *RECOVERY_STATE.0.get() };
+    if !recovery.ready || read_cr3() != recovery.root {
+        crate::kernel_failure("scheduler recovery root")
+    }
+    if unsafe { (&*TASK_OWNER.0.get()).is_some() }
+        || unsafe { (&*TASK_RUNTIME.0.get()).is_some() }
+        || !unsafe { &*TASK_OWNERS.0.get() }.is_empty()
+    {
+        crate::kernel_failure("scheduler publication state")
+    }
+
+    let allocator = unsafe { crate::frame_allocator() };
+    let mut backend = KernelBackend { allocator };
+    let pair =
+        match construct_address_space_pair(SENDER_GENERATION, RECEIVER_GENERATION, &mut backend) {
+            Ok(pair) => pair,
+            Err(PairBuildFailure::First(failure))
+                if failure.rollback_error.is_none() && failure.retained.is_empty() =>
+            {
+                crate::kernel_failure("scheduler first address space")
+            }
+            Err(PairBuildFailure::Second {
+                second,
+                first_teardown,
+            }) if second.rollback_error.is_none()
+                && second.retained.is_empty()
+                && first_teardown.is_none() =>
+            {
+                crate::kernel_failure("scheduler second address space")
+            }
+            Err(_) => crate::kernel_failure("scheduler construction rollback"),
+        };
+
+    let sender_root = pair
+        .first
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("sender root missing"));
+    let receiver_root = pair
+        .second
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("receiver root missing"));
+    let sender_context = TaskContextV1::initial(
+        SENDER_TASK_ID,
+        SENDER_GENERATION,
+        sender_root,
+        USER_TEXT,
+        USER_STACK_TOP,
+        u64::from(USER_CODE_SELECTOR),
+        u64::from(USER_DATA_SELECTOR),
+    );
+    let receiver_context = TaskContextV1::initial(
+        RECEIVER_TASK_ID,
+        RECEIVER_GENERATION,
+        receiver_root,
+        USER_TEXT,
+        USER_STACK_TOP,
+        u64::from(USER_CODE_SELECTOR),
+        u64::from(USER_DATA_SELECTOR),
+    );
+    let contexts_valid = sender_context
+        .validate(
+            SENDER_TASK_ID,
+            SENDER_GENERATION,
+            sender_root,
+            task_context_policy(),
+        )
+        .is_ok()
+        && receiver_context
+            .validate(
+                RECEIVER_TASK_ID,
+                RECEIVER_GENERATION,
+                receiver_root,
+                task_context_policy(),
+            )
+            .is_ok();
+    let mut runtime = Runtime::new(sender_context, receiver_context).ok();
+    if !contexts_valid || runtime.is_none() {
+        let second_ok = teardown_checked(pair.second, &mut backend).is_ok();
+        let first_ok = teardown_checked(pair.first, &mut backend).is_ok();
+        if !second_ok || !first_ok {
+            crate::kernel_failure("scheduler publication rollback")
+        }
+        crate::kernel_failure("scheduler initial context")
+    }
+    let next = runtime
+        .as_mut()
+        .and_then(|runtime| runtime.dispatch_next().ok().flatten())
+        .unwrap_or_else(|| crate::kernel_failure("scheduler initial dispatch"));
+
+    unsafe {
+        *TASK_OWNERS.0.get() = TaskOwners {
+            sender: Some(pair.first),
+            receiver: Some(pair.second),
+        };
+        *TASK_RUNTIME.0.get() = runtime;
+    }
+    resume_scheduled_task(next)
+}
+
+fn resume_scheduled_task(task: u64) -> ! {
+    let runtime = unsafe { &mut *TASK_RUNTIME.0.get() }
+        .as_mut()
+        .unwrap_or_else(|| crate::kernel_failure("task runtime missing"));
+    if runtime.running_task() != Ok(task) || runtime.state(task) != Ok(TaskState::Running) {
+        crate::kernel_failure("scheduler selected state")
+    }
+    let generation = runtime
+        .generation(task)
+        .unwrap_or_else(|_| crate::kernel_failure("task generation missing"));
+    let owners = unsafe { &mut *TASK_OWNERS.0.get() };
+    let owner = owners
+        .get_mut(task)
+        .unwrap_or_else(|| crate::kernel_failure("task owner missing"));
+    let root = owner
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("task root missing"));
+    if owner.state() != LifecycleState::Inactive || owner.generation() != generation {
+        crate::kernel_failure("task owner state")
+    }
+    let context = runtime
+        .context(task)
+        .unwrap_or_else(|_| crate::kernel_failure("task context missing"));
+    if context
+        .validate(task, generation, root, task_context_policy())
+        .is_err()
+    {
+        crate::kernel_failure("task context validation")
+    }
+    let context_pointer = context as *const TaskContextV1;
+    if owner.activate().is_err() {
+        crate::kernel_failure("task owner activation")
+    }
+    let recovery = unsafe { *RECOVERY_STATE.0.get() };
+    unsafe {
+        *CURRENT_TASK.0.get() = task;
+        *ACTIVE_CONTEXT.0.get() = ActiveContext {
+            present: true,
+            task,
+            task_root: root,
+            recovery_root: recovery.root,
+            recovery_stack: RECOVERY_STACK_TOP,
+            continuation: 0,
+        };
+        makopa_resume_task(context_pointer)
+    }
+}
+
+#[unsafe(no_mangle)]
+extern "sysv64" fn makopa_task_trap_dispatch(frame: *const TrapFrameV1) -> ! {
+    let recovery = unsafe { *RECOVERY_STATE.0.get() };
+    let frame_address = frame as u64;
+    let frame_end = frame_address.checked_add(size_of::<TrapFrameV1>() as u64);
+    if read_cr3() != recovery.root
+        || frame_address < RECOVERY_STACK_BASE
+        || frame_end.is_none_or(|end| end > RECOVERY_STACK_TOP)
+        || !frame_address.is_multiple_of(8)
+    {
+        crate::kernel_failure("trap recovery boundary")
+    }
+    // SAFETY: the naked trampoline has placed the asserted complete frame in
+    // the guarded recovery stack, switched roots, and bounded it above.
+    let captured = unsafe { frame.read() };
+    let task = unsafe { *CURRENT_TASK.0.get() };
+    let runtime = unsafe { &mut *TASK_RUNTIME.0.get() }
+        .as_mut()
+        .unwrap_or_else(|| crate::kernel_failure("trap runtime missing"));
+    if runtime.running_task() != Ok(task) {
+        crate::kernel_failure("trap running task")
+    }
+    let owners = unsafe { &mut *TASK_OWNERS.0.get() };
+    let owner = owners
+        .get_mut(task)
+        .unwrap_or_else(|| crate::kernel_failure("trap owner missing"));
+    if owner.state() != LifecycleState::Active {
+        crate::kernel_failure("trap owner inactive")
+    }
+    let root = owner
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("trap root missing"));
+    let active_context = unsafe { *ACTIVE_CONTEXT.0.get() };
+    if !active_context.present
+        || active_context.task != task
+        || active_context.task_root != root
+        || active_context.recovery_root != recovery.root
+        || active_context.recovery_stack != RECOVERY_STACK_TOP
+        || active_context.continuation != 0
+    {
+        crate::kernel_failure("trap active owner")
+    }
+    let generation = owner.generation();
+    if owner.recover().is_err()
+        || runtime
+            .capture_trap(task, captured, root, generation)
+            .is_err()
+        || runtime
+            .context(task)
+            .and_then(|context| {
+                context
+                    .validate(task, generation, root, task_context_policy())
+                    .map_err(|_| makopa_task_runtime::RuntimeError::WrongState)
+            })
+            .is_err()
+    {
+        crate::kernel_failure("trap context capture")
+    }
+    let outcome = runtime
+        .handle_trap(task)
+        .unwrap_or_else(|_| crate::kernel_failure("trap state transition"));
+    unsafe {
+        *CURRENT_TASK.0.get() = 0;
+        *ACTIVE_CONTEXT.0.get() = ActiveContext::new();
+    }
+    match outcome {
+        TrapOutcome::Resume(next) | TrapOutcome::Switch(next) => resume_scheduled_task(next),
+        TrapOutcome::Exit(exited) => teardown_exited_task(exited),
+    }
+}
+
+fn teardown_exited_task(task: u64) -> ! {
+    let owner = unsafe { &mut *TASK_OWNERS.0.get() }
+        .take(task)
+        .unwrap_or_else(|| crate::kernel_failure("exited owner missing"));
+    if owner.state() != LifecycleState::Inactive {
+        crate::kernel_failure("exited owner active")
+    }
+    let allocator = unsafe { crate::frame_allocator() };
+    let mut backend = KernelBackend { allocator };
+    let dead = match teardown_checked(owner, &mut backend) {
+        Ok(owner) => owner,
+        Err(_) => crate::kernel_failure("exited owner teardown"),
+    };
+    if dead.state() != LifecycleState::Dead || !dead.ledger().is_empty() {
+        crate::kernel_failure("exited ownership remains")
+    }
+    let next = unsafe { &mut *TASK_RUNTIME.0.get() }
+        .as_mut()
+        .unwrap_or_else(|| crate::kernel_failure("teardown runtime missing"))
+        .complete_teardown(task)
+        .unwrap_or_else(|_| crate::kernel_failure("teardown state transition"));
+    match next {
+        Some(task) => resume_scheduled_task(task),
+        None => scheduler_success(),
+    }
+}
+
+fn scheduler_success() -> ! {
+    let runtime = unsafe { &*TASK_RUNTIME.0.get() }
+        .as_ref()
+        .unwrap_or_else(|| crate::kernel_failure("final runtime missing"));
+    let (queue, queue_len) = runtime.queue();
+    let endpoint = runtime.endpoint();
+    if runtime.validate().is_err()
+        || runtime.state(SENDER_TASK_ID) != Ok(TaskState::Dead)
+        || runtime.state(RECEIVER_TASK_ID) != Ok(TaskState::Dead)
+        || runtime.generation(SENDER_TASK_ID) != Ok(0)
+        || runtime.generation(RECEIVER_TASK_ID) != Ok(0)
+        || queue_len != 0
+        || queue != [0, 0]
+        || endpoint.sender_task != 0
+        || endpoint.sender_generation != 0
+        || endpoint.receiver_task != 0
+        || endpoint.receiver_generation != 0
+        || endpoint.occupied
+        || endpoint.payload != 0
+        || !unsafe { &*TASK_OWNERS.0.get() }.is_empty()
+        || unsafe { *CURRENT_TASK.0.get() } != 0
+        || unsafe { (*ACTIVE_CONTEXT.0.get()).present }
+    {
+        crate::kernel_failure("scheduler residual state")
+    }
+    crate::ipc_success()
+}
+
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+unsafe extern "sysv64" fn makopa_task_trap_trampoline() -> ! {
+    naked_asm!(
+        "cld",
+        "push r15",
+        "push r14",
+        "push r13",
+        "push r12",
+        "push r11",
+        "push r10",
+        "push r9",
+        "push r8",
+        "push rdi",
+        "push rsi",
+        "push rbp",
+        "push rdx",
+        "push rcx",
+        "push rbx",
+        "push rax",
+        "mov rdi, rsp",
+        "mov rax, qword ptr [rip + {recovery_state}]",
+        "mov cr3, rax",
+        "and rsp, -16",
+        "call {dispatch}",
+        "ud2",
+        recovery_state = sym RECOVERY_STATE,
+        dispatch = sym makopa_task_trap_dispatch,
+    )
+}
+
+#[unsafe(naked)]
+#[unsafe(no_mangle)]
+unsafe extern "sysv64" fn makopa_resume_task(_context: *const TaskContextV1) -> ! {
+    naked_asm!(
+        "mov r11, rdi",
+        "mov rsp, {recovery_stack_top}",
+        "push qword ptr [r11 + {ss}]",
+        "push qword ptr [r11 + {rsp}]",
+        "push qword ptr [r11 + {rflags}]",
+        "push qword ptr [r11 + {cs}]",
+        "push qword ptr [r11 + {rip}]",
+        "mov rax, qword ptr [r11 + {root}]",
+        "mov cr3, rax",
+        "mov rax, qword ptr [r11 + {rax}]",
+        "mov rbx, qword ptr [r11 + {rbx}]",
+        "mov rcx, qword ptr [r11 + {rcx}]",
+        "mov rdx, qword ptr [r11 + {rdx}]",
+        "mov rbp, qword ptr [r11 + {rbp}]",
+        "mov rsi, qword ptr [r11 + {rsi}]",
+        "mov rdi, qword ptr [r11 + {rdi}]",
+        "mov r8, qword ptr [r11 + {r8}]",
+        "mov r9, qword ptr [r11 + {r9}]",
+        "mov r10, qword ptr [r11 + {r10}]",
+        "mov r12, qword ptr [r11 + {r12}]",
+        "mov r13, qword ptr [r11 + {r13}]",
+        "mov r14, qword ptr [r11 + {r14}]",
+        "mov r15, qword ptr [r11 + {r15}]",
+        "mov r11, qword ptr [r11 + {r11}]",
+        "iretq",
+        recovery_stack_top = const RECOVERY_STACK_TOP,
+        rax = const CONTEXT_RAX_OFFSET,
+        rbx = const CONTEXT_RBX_OFFSET,
+        rcx = const CONTEXT_RCX_OFFSET,
+        rdx = const CONTEXT_RDX_OFFSET,
+        rbp = const CONTEXT_RBP_OFFSET,
+        rsi = const CONTEXT_RSI_OFFSET,
+        rdi = const CONTEXT_RDI_OFFSET,
+        r8 = const CONTEXT_R8_OFFSET,
+        r9 = const CONTEXT_R9_OFFSET,
+        r10 = const CONTEXT_R10_OFFSET,
+        r11 = const CONTEXT_R11_OFFSET,
+        r12 = const CONTEXT_R12_OFFSET,
+        r13 = const CONTEXT_R13_OFFSET,
+        r14 = const CONTEXT_R14_OFFSET,
+        r15 = const CONTEXT_R15_OFFSET,
+        rip = const CONTEXT_RIP_OFFSET,
+        rsp = const CONTEXT_RSP_OFFSET,
+        rflags = const CONTEXT_RFLAGS_OFFSET,
+        cs = const CONTEXT_CS_OFFSET,
+        ss = const CONTEXT_SS_OFFSET,
+        root = const CONTEXT_ROOT_OFFSET,
+    )
+}
+
 #[unsafe(naked)]
 #[unsafe(no_mangle)]
 unsafe extern "sysv64" fn makopa_enter_user(
@@ -804,12 +1376,21 @@ fn install_descriptor_tables() -> Result<(), IsolationError> {
     descriptors.gdt[6] = tss_high;
 
     descriptors.idt[PAGE_FAULT_VECTOR as usize] =
-        IdtEntry::interrupt_gate(makopa_page_fault_trampoline as *const () as u64, 0);
-    descriptors.idt[GENERAL_PROTECTION_VECTOR as usize] =
-        IdtEntry::interrupt_gate(makopa_general_protection_trampoline as *const () as u64, 0);
+        IdtEntry::interrupt_gate(makopa_page_fault_trampoline as *const () as u64, 0, 0x8e);
+    descriptors.idt[GENERAL_PROTECTION_VECTOR as usize] = IdtEntry::interrupt_gate(
+        makopa_general_protection_trampoline as *const () as u64,
+        0,
+        0x8e,
+    );
     descriptors.idt[DOUBLE_FAULT_VECTOR as usize] = IdtEntry::interrupt_gate(
         makopa_double_fault_trampoline as *const () as u64,
         DOUBLE_FAULT_IST,
+        0x8e,
+    );
+    descriptors.idt[TASK_TRAP_VECTOR as usize] = IdtEntry::interrupt_gate(
+        makopa_task_trap_trampoline as *const () as u64,
+        0,
+        DPL3_INTERRUPT_GATE_ATTRIBUTES,
     );
 
     let gdt_pointer = DescriptorTablePointer {
@@ -883,6 +1464,32 @@ struct KernelBackend<'a> {
     allocator: &'a mut FrameAllocator,
 }
 
+fn probe_bytes(generation: u64) -> Result<&'static [u8], IsolationError> {
+    if generation == TASK_GENERATION {
+        return Ok(&LEGACY_USER_PROBE);
+    }
+    let (start, end) = match generation {
+        SENDER_GENERATION => (
+            linker_address(ptr::addr_of!(makopa_sender_probe)),
+            linker_address(ptr::addr_of!(makopa_sender_probe_end)),
+        ),
+        RECEIVER_GENERATION => (
+            linker_address(ptr::addr_of!(makopa_receiver_probe)),
+            linker_address(ptr::addr_of!(makopa_receiver_probe_end)),
+        ),
+        _ => return Err(IsolationError::InvalidMapping),
+    };
+    let length = end
+        .checked_sub(start)
+        .and_then(|value| usize::try_from(value).ok())
+        .filter(|value| *value != 0 && *value <= PAGE_SIZE as usize)
+        .ok_or(IsolationError::InvalidMapping)?;
+    // SAFETY: the global-assembly boundary symbols enclose bytes in the
+    // kernel's immutable executable segment. The checked length is one page at
+    // most and the resulting view is used only as the source of a copy.
+    Ok(unsafe { slice::from_raw_parts(start as *const u8, length) })
+}
+
 impl AddressSpaceBackend for KernelBackend<'_> {
     type Error = IsolationError;
 
@@ -892,7 +1499,12 @@ impl AddressSpaceBackend for KernelBackend<'_> {
             .map_err(|_| IsolationError::FrameAllocation)
     }
 
-    fn prepare_frame(&mut self, role: FrameRole, frame: u64) -> Result<(), Self::Error> {
+    fn prepare_frame(
+        &mut self,
+        generation: u64,
+        role: FrameRole,
+        frame: u64,
+    ) -> Result<(), Self::Error> {
         with_temporary_frame(frame, |bytes| {
             bytes.fill(0);
             if role == FrameRole::Root {
@@ -903,7 +1515,8 @@ impl AddressSpaceBackend for KernelBackend<'_> {
                     task[index] = recovery.entries[index];
                 }
             } else if role == FrameRole::Text {
-                bytes[..USER_PROBE.len()].copy_from_slice(&USER_PROBE);
+                let probe = probe_bytes(generation)?;
+                bytes[..probe.len()].copy_from_slice(probe);
             }
             Ok(())
         })

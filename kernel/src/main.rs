@@ -28,9 +28,10 @@ impl KernelFrameAllocator {
     }
 }
 
-// SAFETY: OS020 has one kernel entry path, keeps interrupts disabled, and has
-// no scheduler or reentrant allocator caller. Later concurrency must replace
-// this single-owner boundary with explicit synchronization.
+// SAFETY: OS022 has one kernel entry path and one cooperative CPU. Interrupts
+// remain disabled, every trap reaches the recovery root before allocator use,
+// and no allocator reference survives a context transfer. Timer or device
+// preemption must replace this boundary with explicit synchronization.
 unsafe impl Sync for KernelFrameAllocator {}
 
 #[unsafe(link_section = ".bss.frame_allocator")]
@@ -129,7 +130,7 @@ pub unsafe extern "sysv64" fn kernel_entry(handoff: *const BootHandoffV1) -> ! {
     unsafe { arch_x86_64::activate_recovery_context() }
 }
 
-/// Return the single OS021 allocator owner after the caller has ended any
+/// Return the single OS022 allocator owner after the caller has ended any
 /// earlier borrow and while interrupts remain disabled.
 ///
 /// # Safety
@@ -137,8 +138,8 @@ pub unsafe extern "sysv64" fn kernel_entry(handoff: *const BootHandoffV1) -> ! {
 /// The caller must be the unique kernel execution path and must not retain the
 /// returned reference across another call to this function.
 pub(crate) unsafe fn frame_allocator() -> &'static mut FrameAllocator {
-    // SAFETY: upheld by the caller and by the OS021 single-core, non-reentrant
-    // execution boundary.
+    // SAFETY: upheld by the caller and by the OS022 single-core, cooperative,
+    // non-reentrant execution boundary.
     unsafe { &mut *FRAME_ALLOCATOR.0.get() }
 }
 
@@ -155,6 +156,13 @@ pub(crate) fn isolation_success() -> ! {
     let mut serial = SerialPort::new(KERNEL_SERIAL);
     serial.initialize();
     let _ = serial.write_str("MakopaOS isolation v1 ok user-fault-contained\r\n");
+    unsafe { arch_x86_64::run_scheduler() }
+}
+
+pub(crate) fn ipc_success() -> ! {
+    let mut serial = SerialPort::new(KERNEL_SERIAL);
+    serial.initialize();
+    let _ = serial.write_str("MakopaOS ipc v1 ok cooperative-two-task\r\n");
     exit_qemu(QEMU_SUCCESS)
 }
 

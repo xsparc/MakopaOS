@@ -42,7 +42,8 @@ cargo +1.97.1 test --locked \
   -p makopa-address-space \
   -p makopa-boot-contract \
   -p makopa-frame-allocator \
-  -p makopa-kernel-image
+  -p makopa-kernel-image \
+  -p makopa-task-runtime
 cargo +1.97.1 audit --deny warnings
 nasm -Wall -Werror -f bin -o boot.bin boot.asm
 python scripts/verify_boot.py boot.bin

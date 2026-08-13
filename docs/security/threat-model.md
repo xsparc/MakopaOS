@@ -18,7 +18,11 @@ architecture nevertheless treats isolation claims as testable contracts.
 - a frame returned by an address-space owner is no longer reachable through an
   active mapping, temporary alias, or stale mapping token; and
 - an expected unprivileged fault cannot resume the faulting task or corrupt the
-  kernel recovery context.
+  kernel recovery context;
+- one cooperative task cannot inherit another task's integer register or
+  address-space context; and
+- bounded IPC cannot expose a user pointer, retain an exited receiver's value,
+  or leave a live endpoint generation after teardown.
 
 ## Initial adversaries and failures
 
@@ -58,9 +62,9 @@ architecture nevertheless treats isolation claims as testable contracts.
   `MEMORY_USABLE` records, with no retained handoff reference;
 - checked lowest-address allocation and state-preserving rejection of invalid
   or capacity-exceeding frame returns;
-- reviewed `UnsafeCell` singleton boundaries for the frame allocator and
-  fixed kernel paging state while interrupts remain disabled and no scheduler,
-  SMP, or reentrant caller exists;
+- reviewed `UnsafeCell` singleton boundaries for the frame allocator, fixed
+  paging state, and cooperative scheduler while interrupts remain disabled and
+  no timer, SMP, or reentrant caller exists;
 - a kernel-owned four-level recovery root that never adopts inherited UEFI page
   tables, enforces supervisor W^X and NX mappings with `CR0.WP`, and uses
   guarded recovery and double-fault stacks;
@@ -71,6 +75,16 @@ architecture nevertheless treats isolation claims as testable contracts.
 - checked address-space lifecycle transitions, stale-generation rejection, and
   teardown that switches to the recovery root, unmaps and invalidates aliases,
   proves frames unreachable, and only then returns them to the allocator;
+- a DPL3 interrupt-gate ABI whose stable naked entry captures every admitted
+  GPR and switches to the recovery root before Rust can inspect task state;
+- validated, integer-only contexts with `CR4.FSGSBASE` clear, zero user FS/GS
+  bases, fixed selectors, canonical instruction and stack pointers, and masked
+  `IF`, `DF`, and `IOPL` flags;
+- exactly two generation-bound task slots, unique deterministic FIFO membership,
+  one running task, and reverse-order teardown before another root is resumed;
+- one fixed-role endpoint with explicit occupancy and one inline `u64`, exact
+  state-preserving rejections, block/wake and peer-close behavior, and no user
+  pointers, byte lengths, shared mappings, handles, or capabilities;
 - deny-by-default capability manifests;
 - typed validation at every privilege and protocol boundary;
 - bounded queues, timeouts, cancellation, and replay protection;
@@ -88,13 +102,15 @@ mappings, SMEP, and SMAP remain deferred until the relevant subsystem exists.
 A roadmap item that introduces one of those boundaries must update this
 document before claiming coverage.
 
-## OS021 residual boundary
+## OS022 residual boundary
 
-The current containment proof is deliberately narrow: one fixed probe runs on
-one emulated `qemu64` CPU with maskable interrupts disabled. The recovery root,
-guard pages, CPL-aware exception parsing, dedicated double-fault IST path, and
-reverse-order teardown are exercised by host and QEMU gates, but they do not
-establish scheduler safety, interrupt concurrency, SMP TLB coherence, arbitrary
-user-binary loading, or real-hardware compatibility. Any expansion beyond the
-single synchronous probe must first add the missing synchronization and
-cross-context invalidation contract.
+The current containment and scheduling proof is deliberately narrow: two fixed
+integer-only probes run cooperatively on one emulated `qemu64` CPU with maskable
+interrupts disabled. The recovery root, guard pages, CPL-aware exception
+parsing, dedicated double-fault IST path, complete GPR switch, fixed FIFO, one
+inline endpoint, and reverse-order teardown are exercised by host,
+disassembly, and QEMU gates. They do not establish timer-preemptive scheduling,
+interrupt concurrency, SMP TLB coherence, SIMD or TLS switching, dynamic IPC,
+capability authorization, arbitrary user-binary loading, or real-hardware
+compatibility. Any such expansion must first define its synchronization,
+extended-state, ownership, invalidation, and rollback contract.

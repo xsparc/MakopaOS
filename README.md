@@ -21,9 +21,13 @@ a capability-oriented runtime with a small, auditable trusted core.
 - copies usable memory into a bounded kernel-owned physical-frame allocator;
 - allocates, recycles, and deterministically reuses page-aligned frames;
 - installs a kernel-owned recovery address space and guarded exception stacks;
-- contains one exact ring-3 page fault and returns all task-owned frames; and
-- emits deterministic version, handoff, frame-reuse, and fault-containment
-  records over the serial console before exiting QEMU.
+- contains one exact ring-3 page fault and returns all task-owned frames;
+- cooperatively switches complete integer contexts between two fixed ring-3
+  tasks through a DPL3 trap;
+- transfers one inline `u64` through a fixed single-slot endpoint and tears
+  both address spaces down in reverse ownership order; and
+- emits deterministic version, handoff, frame-reuse, fault-containment, and
+  cooperative-IPC records over the serial console before exiting QEMU.
 
 ## Build and verify
 
@@ -43,7 +47,8 @@ cargo +1.97.1 test --locked \
   -p makopa-address-space \
   -p makopa-boot-contract \
   -p makopa-frame-allocator \
-  -p makopa-kernel-image
+  -p makopa-kernel-image \
+  -p makopa-task-runtime
 python scripts/build_uefi.py
 python scripts/verify_uefi_boot.py \
   --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd \

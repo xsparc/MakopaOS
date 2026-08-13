@@ -51,7 +51,8 @@ jobs:
             -p makopa-address-space \
             -p makopa-boot-contract \
             -p makopa-frame-allocator \
-            -p makopa-kernel-image
+            -p makopa-kernel-image \
+            -p makopa-task-runtime
 
       - name: Check project evidence
         run: |
@@ -72,7 +73,8 @@ jobs:
           cargo +1.97.1 tree --locked -e features \
             -p makopa-kernel \
             --target x86_64-unknown-none | \
-            python3 scripts/verify_dependency_features.py -
+            python3 scripts/verify_dependency_features.py - \
+              --task-manifest crates/task-runtime/Cargo.toml
           RUST_SYSROOT="$(rustc +1.97.1 --print sysroot)"
           LLVM_OBJDUMP="$(find "$RUST_SYSROOT/lib/rustlib" \
             -path '*/bin/llvm-objdump' -print -quit)"

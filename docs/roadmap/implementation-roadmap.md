@@ -319,7 +319,7 @@ changing the decision.
 
 ### OS022 — Minimal scheduler and IPC
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS015
 
@@ -334,6 +334,20 @@ pinned QEMU `qemu64` one-vCPU gate preserves the prior transcripts, executes the
 declared receiver-block, sender-wake, transfer, exit, and teardown order, and
 emits `MakopaOS ipc v1 ok cooperative-two-task` only after all task frames and
 endpoint state are gone.
+
+Delivery: a dependency-free `no_std` task-runtime crate owns the two fixed task
+slots, complete integer contexts, unique FIFO queue membership, exact trap
+results, and the single occupied-bit-plus-`u64` endpoint. The kernel constructs
+both seven-frame address spaces before publication, installs DPL3 vector
+`0x80`, rejects `CR4.FSGSBASE`, captures every GPR on the guarded recovery
+stack, installs the recovery root before Rust dispatch, and resumes only
+validated contexts through a non-returning `iretq` path. Global-assembly sender
+and receiver probes prove receiver block, sender wake, exact value transfer,
+register preservation, exit, reverse-order teardown, and empty residual state.
+The existing CI job adds the task-runtime host tests, two-owner construction-
+failure rollback, dependency-free manifest evidence, complete-switch
+disassembly checks, and the terminal IPC record to its pinned `qemu64` one-vCPU
+transcript without changing topology or permissions.
 
 Non-scope: timer preemption, asynchronous interrupts, SMP, priorities,
 fairness beyond the fixed FIFO trace, arbitrary user binaries, SIMD or user

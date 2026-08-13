@@ -14,7 +14,10 @@ VERSION_SERIAL = b"MakopaOS 0.1.0\r\n"
 HANDOFF_SERIAL = b"MakopaOS handoff v1 ok framebuffer\r\n"
 FRAME_SERIAL = b"MakopaOS frames v1 ok reuse\r\n"
 ISOLATION_SERIAL = b"MakopaOS isolation v1 ok user-fault-contained\r\n"
-EXPECTED_SERIAL = VERSION_SERIAL + HANDOFF_SERIAL + FRAME_SERIAL + ISOLATION_SERIAL
+IPC_SERIAL = b"MakopaOS ipc v1 ok cooperative-two-task\r\n"
+EXPECTED_SERIAL = (
+    VERSION_SERIAL + HANDOFF_SERIAL + FRAME_SERIAL + ISOLATION_SERIAL + IPC_SERIAL
+)
 EXPECTED_EXIT_CODE = 33
 
 
