@@ -580,7 +580,12 @@ pub trait AddressSpaceBackend {
     type Error;
 
     fn allocate_frame(&mut self, role: FrameRole) -> Result<u64, Self::Error>;
-    fn prepare_frame(&mut self, role: FrameRole, frame: u64) -> Result<(), Self::Error>;
+    fn prepare_frame(
+        &mut self,
+        generation: u64,
+        role: FrameRole,
+        frame: u64,
+    ) -> Result<(), Self::Error>;
     fn install_link(&mut self, link: LinkSpec, parent: u64, child: u64) -> Result<(), Self::Error>;
     fn remove_link(&mut self, link: LinkSpec, parent: u64, child: u64) -> Result<(), Self::Error>;
     fn clear_shared_entries(&mut self, root: u64) -> Result<(), Self::Error>;
@@ -639,7 +644,7 @@ pub fn construct_address_space<B: AddressSpaceBackend>(
                 backend,
             ));
         }
-        if let Err(error) = backend.prepare_frame(role, frame) {
+        if let Err(error) = backend.prepare_frame(generation, role, frame) {
             return Err(rollback_build(
                 BuildCause::Backend(error),
                 &mut owner,
@@ -673,6 +678,50 @@ pub fn construct_address_space<B: AddressSpaceBackend>(
         ));
     }
     Ok(owner)
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct AddressSpacePair {
+    pub first: AddressSpaceOwner,
+    pub second: AddressSpaceOwner,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+// The failure owns every retained fixed ledger or non-cloneable owner. Heap
+// indirection is unavailable at this no_std ownership boundary.
+#[allow(clippy::large_enum_variant)]
+pub enum PairBuildFailure<E> {
+    First(BuildFailure<E>),
+    Second {
+        second: BuildFailure<E>,
+        first_teardown: Option<CheckedTeardownFailure<E>>,
+    },
+}
+
+/// Construct two inactive owners and publish neither to a caller unless both
+/// constructions succeed.
+///
+/// If the second construction fails, its own rollback runs first and the
+/// already-built first owner is then torn down through the normal checked path.
+/// Any retained ownership is returned in the error instead of being forgotten.
+#[allow(clippy::result_large_err)]
+pub fn construct_address_space_pair<B: AddressSpaceBackend>(
+    first_generation: u64,
+    second_generation: u64,
+    backend: &mut B,
+) -> Result<AddressSpacePair, PairBuildFailure<B::Error>> {
+    let first =
+        construct_address_space(first_generation, backend).map_err(PairBuildFailure::First)?;
+    match construct_address_space(second_generation, backend) {
+        Ok(second) => Ok(AddressSpacePair { first, second }),
+        Err(second) => {
+            let first_teardown = teardown_checked(first, backend).err();
+            Err(PairBuildFailure::Second {
+                second,
+                first_teardown,
+            })
+        }
+    }
 }
 
 fn rollback_build<B: AddressSpaceBackend>(
@@ -889,9 +938,9 @@ mod tests {
         frame_sequence: Vec<u64>,
         frame_sequence_index: usize,
         live: Vec<OwnedFrame>,
-        links: Vec<LinkSpec>,
+        links: Vec<(LinkSpec, u64, u64)>,
         events: Vec<Event>,
-        shared_root: bool,
+        shared_roots: Vec<u64>,
         window_clear: bool,
     }
 
@@ -908,7 +957,7 @@ mod tests {
                 live: Vec::new(),
                 links: Vec::new(),
                 events: Vec::new(),
-                shared_root: false,
+                shared_roots: Vec::new(),
                 window_clear: true,
             }
         }
@@ -961,7 +1010,12 @@ mod tests {
             Ok(frame)
         }
 
-        fn prepare_frame(&mut self, role: FrameRole, frame: u64) -> Result<(), Self::Error> {
+        fn prepare_frame(
+            &mut self,
+            _generation: u64,
+            role: FrameRole,
+            frame: u64,
+        ) -> Result<(), Self::Error> {
             self.forward()?;
             if !self.live.contains(&OwnedFrame {
                 role,
@@ -970,7 +1024,7 @@ mod tests {
                 return Err(TestError::InvalidState);
             }
             if role == FrameRole::Root {
-                self.shared_root = true;
+                self.shared_roots.push(frame);
             }
             self.events.push(Event::Prepare(role, frame));
             Ok(())
@@ -979,14 +1033,14 @@ mod tests {
         fn install_link(
             &mut self,
             link: LinkSpec,
-            _parent: u64,
-            _child: u64,
+            parent: u64,
+            child: u64,
         ) -> Result<(), Self::Error> {
             self.forward()?;
-            if self.links.contains(&link) {
+            if self.links.contains(&(link, parent, child)) {
                 return Err(TestError::DuplicateMapping);
             }
-            self.links.push(link);
+            self.links.push((link, parent, child));
             self.events.push(Event::Install(link.parent, link.child));
             Ok(())
         }
@@ -994,18 +1048,29 @@ mod tests {
         fn remove_link(
             &mut self,
             link: LinkSpec,
-            _parent: u64,
-            _child: u64,
+            parent: u64,
+            child: u64,
         ) -> Result<(), Self::Error> {
-            if self.links.pop() != Some(link) {
+            let Some(position) = self
+                .links
+                .iter()
+                .rposition(|installed| *installed == (link, parent, child))
+            else {
                 return Err(TestError::MissingMapping);
-            }
+            };
+            self.links.remove(position);
             self.events.push(Event::Remove(link.parent, link.child));
             Ok(())
         }
 
-        fn clear_shared_entries(&mut self, _root: u64) -> Result<(), Self::Error> {
-            self.shared_root = false;
+        fn clear_shared_entries(&mut self, root: u64) -> Result<(), Self::Error> {
+            if let Some(position) = self
+                .shared_roots
+                .iter()
+                .position(|candidate| *candidate == root)
+            {
+                self.shared_roots.remove(position);
+            }
             self.events.push(Event::ClearShared);
             Ok(())
         }
@@ -1016,8 +1081,15 @@ mod tests {
             Ok(())
         }
 
-        fn verify_unreachable(&mut self, _frames: &[OwnedFrame]) -> Result<(), Self::Error> {
-            if !self.links.is_empty() || self.shared_root || !self.window_clear {
+        fn verify_unreachable(&mut self, frames: &[OwnedFrame]) -> Result<(), Self::Error> {
+            let owns = |address: u64| frames.iter().any(|frame| frame.physical_start == address);
+            if self
+                .links
+                .iter()
+                .any(|(_, parent, child)| owns(*parent) || owns(*child))
+                || self.shared_roots.iter().any(|root| owns(*root))
+                || !self.window_clear
+            {
                 return Err(TestError::InvalidState);
             }
             self.events.push(Event::Verify);
@@ -1029,9 +1101,10 @@ mod tests {
                 return Err(TestError::ReturnRejected);
             }
             self.returned += 1;
-            if self.live.pop() != Some(frame) {
+            let Some(position) = self.live.iter().position(|candidate| *candidate == frame) else {
                 return Err(TestError::InvalidState);
-            }
+            };
+            self.live.remove(position);
             self.events
                 .push(Event::Return(frame.role, frame.physical_start));
             Ok(())
@@ -1109,6 +1182,32 @@ mod tests {
             .position(|event| matches!(event, Event::Return(_, _)))
             .unwrap();
         assert!(verify < first_return);
+        let teardown_start = backend
+            .events
+            .iter()
+            .rposition(|event| matches!(event, Event::Install(_, _)))
+            .unwrap()
+            + 1;
+        let teardown = &backend.events[teardown_start..];
+        let mut expected = BUILD_LINKS
+            .iter()
+            .rev()
+            .map(|link| Event::Remove(link.parent, link.child))
+            .collect::<Vec<_>>();
+        expected.extend([Event::ClearShared, Event::ClearWindow, Event::Verify]);
+        expected.extend(
+            FrameRole::ALL
+                .iter()
+                .rev()
+                .enumerate()
+                .map(|(index, role)| {
+                    Event::Return(
+                        *role,
+                        0x1000 + (TASK_FRAME_COUNT - 1 - index) as u64 * PAGE_SIZE,
+                    )
+                }),
+        );
+        assert_eq!(expected, teardown);
     }
 
     #[test]
@@ -1187,6 +1286,53 @@ mod tests {
     }
 
     #[test]
+    fn every_second_construction_failure_unwinds_the_first_owner() {
+        let forward_steps = TASK_FRAME_COUNT * 2 + BUILD_LINKS.len();
+        for second_step in 0..forward_steps {
+            let mut backend = ModelBackend::failing(forward_steps + second_step);
+            let failure = construct_address_space_pair(21, 22, &mut backend).unwrap_err();
+            let PairBuildFailure::Second {
+                second,
+                first_teardown,
+            } = failure
+            else {
+                panic!("expected second-owner failure")
+            };
+            assert_eq!(
+                Some(TestError::Injected),
+                match second.cause {
+                    BuildCause::Backend(error) => Some(error),
+                    BuildCause::Owner(_) => None,
+                }
+            );
+            assert_eq!(None, second.rollback_error);
+            assert!(second.retained.is_empty());
+            assert!(first_teardown.is_none());
+            assert!(backend.live.is_empty(), "second step {second_step}");
+            assert!(backend.links.is_empty(), "second step {second_step}");
+            assert!(backend.shared_roots.is_empty(), "second step {second_step}");
+        }
+    }
+
+    #[test]
+    fn successful_pair_can_teardown_first_owner_while_second_remains() {
+        let mut backend = ModelBackend::new();
+        let pair = construct_address_space_pair(31, 32, &mut backend).unwrap();
+        assert_eq!(TASK_FRAME_COUNT * 2, backend.live.len());
+
+        let first_dead = teardown_checked(pair.first, &mut backend).unwrap();
+        assert_eq!(LifecycleState::Dead, first_dead.state());
+        assert_eq!(TASK_FRAME_COUNT, backend.live.len());
+        assert_eq!(BUILD_LINKS.len(), backend.links.len());
+
+        let second_dead = teardown_checked(pair.second, &mut backend).unwrap();
+        assert_eq!(LifecycleState::Dead, second_dead.state());
+        assert!(backend.live.is_empty());
+        assert!(backend.links.is_empty());
+        assert!(backend.shared_roots.is_empty());
+    }
+
+    #[test]
     fn rejected_frame_return_preserves_remaining_ownership() {
         let mut backend = ModelBackend::new();
         let owner = construct_address_space(11, &mut backend).unwrap();
@@ -1254,7 +1400,7 @@ mod tests {
     fn duplicate_install_and_absent_remove_are_distinct_and_state_preserving() {
         let link = BUILD_LINKS[0];
         let mut duplicate = ModelBackend::new();
-        duplicate.links.push(link);
+        duplicate.links.push((link, 0x1000, 0x2000));
         let before = duplicate.links.clone();
         assert_eq!(
             Err(TestError::DuplicateMapping),

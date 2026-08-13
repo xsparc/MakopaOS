@@ -10,6 +10,7 @@ build = "build.rs"
 makopa-address-space.workspace = true
 makopa-boot-contract.workspace = true
 makopa-frame-allocator.workspace = true
+makopa-task-runtime.workspace = true
 x86_64.workspace = true
 
 [[bin]]

@@ -5,10 +5,12 @@ from __future__ import annotations
 
 import argparse
 import sys
+import tomllib
 from pathlib import Path
 
 
 REQUIRED = (
+    "makopa-task-runtime v0.1.0",
     'x86_64 feature "instructions"',
     "x86_64 v0.15.5",
 )
@@ -33,9 +35,24 @@ def feature_violations(tree: str) -> list[str]:
     return errors
 
 
+def task_runtime_dependency_violations(manifest: str) -> list[str]:
+    """Return violations of the dependency-free task-runtime boundary."""
+    parsed = tomllib.loads(manifest)
+    errors: list[str] = []
+    if parsed.get("package", {}).get("name") != "makopa-task-runtime":
+        errors.append("task-runtime manifest has the wrong package name")
+    for table in ("dependencies", "dev-dependencies", "build-dependencies"):
+        if parsed.get(table):
+            errors.append(f"task-runtime manifest has forbidden {table}")
+    if parsed.get("target"):
+        errors.append("task-runtime manifest has forbidden target dependencies")
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("tree", help="captured cargo feature tree, or - for stdin")
+    parser.add_argument("--task-manifest", required=True, type=Path)
     args = parser.parse_args()
     tree = (
         sys.stdin.read()
@@ -43,11 +60,19 @@ def main() -> int:
         else Path(args.tree).read_text(encoding="utf-8")
     )
     errors = feature_violations(tree)
+    errors.extend(
+        task_runtime_dependency_violations(
+            args.task_manifest.read_text(encoding="utf-8")
+        )
+    )
     if errors:
         for error in errors:
             print(f"verify-dependency-features: {error}")
         return 1
-    print("verify-dependency-features: stable x86_64 0.15.5 instructions-only edge")
+    print(
+        "verify-dependency-features: stable x86_64 0.15.5 instructions-only "
+        "edge and dependency-free task runtime"
+    )
     return 0
 
 

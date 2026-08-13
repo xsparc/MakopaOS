@@ -54,6 +54,7 @@ dependencies = [
  "makopa-address-space",
  "makopa-boot-contract",
  "makopa-frame-allocator",
+ "makopa-task-runtime",
  "x86_64",
 ]
 
@@ -69,6 +70,10 @@ dependencies = [
  "makopa-kernel-image",
  "uefi",
 ]
+
+[[package]]
+name = "makopa-task-runtime"
+version = "0.1.0"
 
 [[package]]
 name = "proc-macro2"

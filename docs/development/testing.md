@@ -16,7 +16,8 @@ cargo +1.97.1 test --locked \
   -p makopa-address-space \
   -p makopa-boot-contract \
   -p makopa-frame-allocator \
-  -p makopa-kernel-image
+  -p makopa-kernel-image \
+  -p makopa-task-runtime
 ```
 
 The Rust tests enforce the ADR-0001 handoff sizes and field offsets, exercise
@@ -33,6 +34,14 @@ every forward construction failure, reverse-order rollback and teardown,
 temporary-window clearing, reachability proof before return, and retained
 ownership when a frame return is rejected. Its task ledger remains bounded to
 16 entries and the implemented probe owns seven frames.
+The ADR-0004 task-runtime tests cover complete distinct-register contexts,
+canonical and selector checks, `RFLAGS` masks, generation and root matching,
+the receiver-first FIFO, yield ordering, empty-receive blocking, exact wake and
+result placement, zero-valued messages, full-slot preservation, exact ABI
+rejections, both peer-close directions, empty residual state, and bounded
+operation traces. Address-space tests additionally inject every failure in a
+second construction and prove that the already-built first owner is unwound
+before publication.
 Normalization remains capped at 1,024 fixed-size region records backed by a 24
 KiB loader-owned buffer. The static evidence check validates schema,
 traceability, local references, and accepted-decision coverage. The dated
@@ -68,18 +77,22 @@ The stable exception boundary is checked separately from host behavior:
 ```sh
 cargo +1.97.1 tree --locked -e features \
   -p makopa-kernel --target x86_64-unknown-none | \
-  python scripts/verify_dependency_features.py -
+  python scripts/verify_dependency_features.py - \
+    --task-manifest crates/task-runtime/Cargo.toml
 python scripts/verify_exception_trampolines.py \
   --objdump /path/to/rust-sysroot/lib/rustlib/HOST/bin/llvm-objdump \
   --kernel target/x86_64-unknown-none/release/makopa-kernel
 ```
 
-The feature check requires only the crate's stable `instructions` feature and
-rejects `default`, `nightly`, `abi_x86_interrupt`, or `step_trait`. The
-disassembly check verifies the owned page-fault, general-protection, and
-double-fault naked trampolines, early `CR2` capture, non-returning recovery
-switch, user entry, and absence of compiler-generated returns at the exception
-boundary. CI obtains `llvm-objdump` from the pinned stable toolchain's
+The feature check requires only the crate's stable `instructions` feature,
+rejects `default`, `nightly`, `abi_x86_interrupt`, or `step_trait`, and verifies
+that `makopa-task-runtime` has no dependency table entries. The disassembly
+check preserves the owned page-fault, general-protection, and double-fault
+checks and additionally proves that vector `0x80` captures all GPRs, installs
+the recovery root and stack checkpoint before Rust dispatch, and restores the
+task root and complete integer frame through `iretq`. It also inspects both
+fixed probes for their two trap operations, message constant, and deterministic
+failure transfer. CI obtains `llvm-objdump` from the pinned stable toolchain's
 `llvm-tools-preview` component; no nightly compiler is installed.
 
 ```sh
@@ -99,8 +112,9 @@ both:
 - the exact kernel transcript `MakopaOS 0.1.0\r\n`, followed by
   `MakopaOS handoff v1 ok framebuffer\r\n` and
   `MakopaOS frames v1 ok reuse\r\n`, followed by
-  `MakopaOS isolation v1 ok user-fault-contained\r\n`, appears once as the
-  terminal serial sequence after any firmware console records;
+  `MakopaOS isolation v1 ok user-fault-contained\r\n`, followed by
+  `MakopaOS ipc v1 ok cooperative-two-task\r\n`, appears once as the terminal
+  serial sequence after any firmware console records;
 - QEMU process status `33`, produced by writing success value `0x10` to port
   `0xf4`.
 
@@ -112,9 +126,13 @@ not stop there: QEMU is explicitly started with `-cpu qemu64 -smp 1`, and the
 isolation record proves that the kernel switched away from inherited firmware
 page tables, entered the fixed CPL-3 probe, classified its exact invalid write,
 recovered without resuming it, and returned every task-owned frame after
-unmapping and invalidation. The scenario does not reclaim loader-owned memory,
-exercise asynchronous interrupts or concurrent access, load arbitrary user
-binaries, or claim real-hardware compatibility.
+unmapping and invalidation. The IPC record then proves the receiver-first block,
+sender wake, exact inline transfer, complete register-preserving resume, both
+task exits, and empty queue, endpoint, active-owner, generation, and frame
+ownership state. The scenario does not reclaim loader-owned memory, exercise
+timer preemption, asynchronous interrupts, SMP or concurrent allocator access,
+load arbitrary user binaries, preserve SIMD or TLS state, or claim real-
+hardware compatibility.
 
 ## Dependency audit
 

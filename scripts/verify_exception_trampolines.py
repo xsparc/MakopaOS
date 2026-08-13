@@ -14,13 +14,55 @@ TRAMPOLINES = (
     "makopa_general_protection_trampoline",
     "makopa_double_fault_trampoline",
 )
+TASK_TRAMPOLINE = "makopa_task_trap_trampoline"
+TASK_RESUME = "makopa_resume_task"
+PROBES = ("makopa_sender_probe", "makopa_receiver_probe")
 REQUIRED_SYMBOLS = TRAMPOLINES + (
     "makopa_exception_dispatch",
     "makopa_double_fault_dispatch",
     "makopa_recover_from_user_fault",
     "makopa_enter_user",
     "makopa_switch_to_recovery",
+    TASK_TRAMPOLINE,
+    "makopa_task_trap_dispatch",
+    TASK_RESUME,
+) + PROBES
+
+SAVED_GPRS = (
+    "rax",
+    "rbx",
+    "rcx",
+    "rdx",
+    "rbp",
+    "rsi",
+    "rdi",
+    "r8",
+    "r9",
+    "r10",
+    "r11",
+    "r12",
+    "r13",
+    "r14",
+    "r15",
 )
+CAPTURE_ORDER = tuple(reversed(SAVED_GPRS))
+RESTORE_OFFSETS = {
+    "rax": 0x00,
+    "rbx": 0x08,
+    "rcx": 0x10,
+    "rdx": 0x18,
+    "rbp": 0x20,
+    "rsi": 0x28,
+    "rdi": 0x30,
+    "r8": 0x38,
+    "r9": 0x40,
+    "r10": 0x48,
+    "r11": 0x50,
+    "r12": 0x58,
+    "r13": 0x60,
+    "r14": 0x68,
+    "r15": 0x70,
+}
 
 
 def symbol_body(disassembly: str, symbol: str) -> str | None:
@@ -80,6 +122,59 @@ def disassembly_violations(disassembly: str) -> list[str]:
     for item in ("cr3", "rsp", "jmp"):
         if item not in switch:
             errors.append(f"recovery-root switch lacks {item}")
+
+    trap = bodies.get(TASK_TRAMPOLINE, "")
+    trap_lines = [line for line in trap.splitlines() if "\t" in line]
+    if not trap_lines or "cld" not in trap_lines[0]:
+        errors.append("task trap does not begin with cld")
+    captured = tuple(re.findall(r"\bpushq?\s+%(r(?:ax|bx|cx|dx|bp|si|di|8|9|10|11|12|13|14|15))\b", trap))
+    if captured != CAPTURE_ORDER:
+        errors.append(
+            "task trap GPR capture order mismatch: "
+            f"expected {CAPTURE_ORDER!r}, found {captured!r}"
+        )
+    cr3_position = trap.find("cr3")
+    call_position = trap.find("call")
+    stack_position = trap.find("%rsp", trap.find("cr3") + 1)
+    if cr3_position < 0 or call_position < 0 or cr3_position > call_position:
+        errors.append("task trap does not install recovery CR3 before Rust dispatch")
+    if stack_position < 0 or stack_position > call_position:
+        errors.append("task trap does not checkpoint the recovery stack before dispatch")
+    if "ud2" not in trap or "iret" in trap or re.search(r"\bret[qwl]?\b", trap):
+        errors.append("task trap is not a non-returning one-way entry")
+
+    resume = bodies.get(TASK_RESUME, "")
+    if "cr3" not in resume or "iretq" not in resume:
+        errors.append("task resume lacks task CR3 installation or iretq")
+    if "call" in resume or re.search(r"\bret[qwl]?\b", resume):
+        errors.append("task resume unexpectedly uses a returning call frame")
+    restored: dict[str, int] = {}
+    for match in re.finditer(
+        r"\bmovq\s+(?:(0x[0-9a-f]+))?\(%r11\),\s*%(r(?:ax|bx|cx|dx|bp|si|di|8|9|10|11|12|13|14|15))\b",
+        resume,
+    ):
+        restored[match.group(2)] = int(match.group(1) or "0", 16)
+    for register, expected_offset in RESTORE_OFFSETS.items():
+        if restored.get(register) != expected_offset:
+            errors.append(
+                f"task resume restores {register} from {restored.get(register)!r}, "
+                f"expected {expected_offset:#x}"
+            )
+    privilege_pushes = tuple(
+        int(value, 16)
+        for value in re.findall(r"\bpushq\s+(0x[0-9a-f]+)\(%r11\)", resume)
+    )
+    if privilege_pushes != (0x98, 0x80, 0x88, 0x90, 0x78):
+        errors.append("task resume privilege-frame layout mismatch")
+
+    for probe in PROBES:
+        body = bodies.get(probe, "")
+        if body.count("int\t$0x80") != 2:
+            errors.append(f"{probe} does not contain exactly two vector 0x80 traps")
+        if "4d414b4f5041" not in body:
+            errors.append(f"{probe} lacks the fixed inline message evidence")
+        if "hlt" not in body:
+            errors.append(f"{probe} lacks deterministic failure transfer")
     return errors
 
 
@@ -110,7 +205,10 @@ def main() -> int:
         for error in errors:
             print(f"verify-exception-trampolines: {error}")
         return 1
-    print("verify-exception-trampolines: stable naked entry and recovery paths matched")
+    print(
+        "verify-exception-trampolines: stable exception, complete task-switch, "
+        "and fixed-probe paths matched"
+    )
     return 0
 
 

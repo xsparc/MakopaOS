@@ -8,6 +8,7 @@ from scripts.verify_uefi_boot import (
     EXPECTED_SERIAL,
     FRAME_SERIAL,
     HANDOFF_SERIAL,
+    IPC_SERIAL,
     ISOLATION_SERIAL,
     VERSION_SERIAL,
     boot_violations,
@@ -42,10 +43,14 @@ class VerifyUefiBootTests(unittest.TestCase):
         errors = boot_violations(EXPECTED_EXIT_CODE, transcript)
         self.assertTrue(any("transcript mismatch" in error for error in errors))
 
-    def test_expected_transcript_ends_with_isolation_record(self) -> None:
-        self.assertTrue(EXPECTED_SERIAL.endswith(ISOLATION_SERIAL))
+    def test_expected_transcript_preserves_isolation_before_terminal_ipc(self) -> None:
+        self.assertTrue(EXPECTED_SERIAL.endswith(IPC_SERIAL))
         self.assertIn(HANDOFF_SERIAL, EXPECTED_SERIAL)
         self.assertIn(FRAME_SERIAL, EXPECTED_SERIAL)
+        self.assertEqual(
+            FRAME_SERIAL + ISOLATION_SERIAL + IPC_SERIAL,
+            EXPECTED_SERIAL[-len(FRAME_SERIAL + ISOLATION_SERIAL + IPC_SERIAL) :],
+        )
 
     def test_rejects_validated_handoff_without_frame_reuse_evidence(self) -> None:
         errors = boot_violations(
