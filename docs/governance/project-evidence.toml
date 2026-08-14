@@ -106,19 +106,19 @@ design_refs = ["docs/architecture/overview.md#kernel-core", "docs/architecture/d
 implementation_refs = [".github/workflows/ci.yml", "Cargo.lock", "Cargo.toml", "crates/address-space/Cargo.toml", "crates/address-space/src/lib.rs", "crates/task-runtime/Cargo.toml", "crates/task-runtime/src/lib.rs", "kernel/Cargo.toml", "kernel/src/arch_x86_64.rs", "kernel/src/main.rs", "scripts/verify_dependency_features.py", "scripts/verify_exception_trampolines.py", "scripts/verify_uefi_boot.py"]
 verification_refs = ["crates/address-space/src/lib.rs", "crates/task-runtime/src/lib.rs", "tests/test_verify_dependency_features.py", "tests/test_verify_exception_trampolines.py", "tests/test_verify_uefi_boot.py"]
 validation_refs = ["docs/development/testing.md#repository-and-contract-gates", "docs/development/testing.md#uefi-kernel-entry-gate"]
-risk_refs = ["docs/security/threat-model.md#protected-properties", "docs/security/threat-model.md#required-controls", "docs/security/threat-model.md#os022-residual-boundary"]
+risk_refs = ["docs/security/threat-model.md#protected-properties", "docs/security/threat-model.md#required-controls", "docs/security/threat-model.md#os030-residual-boundary"]
 
 [[requirements]]
 id = "REQ-EXPLICIT-CAPABILITIES"
 statement = "Authorize task effects through unforgeable, scoped capability handles."
-status = "planned"
+status = "implemented"
 objective_ids = ["OBJ-EXPLICIT-AUTHORITY"]
-roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os030-capability-handle-table"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os016-task-local-capability-handle-decision", "docs/roadmap/implementation-roadmap.md#os030-capability-handle-table"]
 design_refs = ["docs/architecture/overview.md#security-model", "docs/architecture/decisions/0005-task-local-capability-handles.md"]
-implementation_refs = []
-verification_refs = []
-validation_refs = []
-risk_refs = []
+implementation_refs = [".github/workflows/ci.yml", "crates/task-runtime/Cargo.toml", "crates/task-runtime/src/lib.rs", "kernel/src/arch_x86_64.rs", "kernel/src/main.rs", "scripts/verify_dependency_features.py", "scripts/verify_exception_trampolines.py", "scripts/verify_uefi_boot.py"]
+verification_refs = ["crates/task-runtime/src/lib.rs", "tests/test_verify_dependency_features.py", "tests/test_verify_exception_trampolines.py", "tests/test_verify_uefi_boot.py"]
+validation_refs = ["docs/development/testing.md#repository-and-contract-gates", "docs/development/testing.md#uefi-kernel-entry-gate"]
+risk_refs = ["docs/security/threat-model.md#protected-properties", "docs/security/threat-model.md#required-controls", "docs/security/threat-model.md#os030-residual-boundary"]
 
 [[requirements]]
 id = "REQ-PORTABLE-WORKLOADS"
@@ -273,6 +273,16 @@ roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os016-task-local-capabil
 approval_ref = "conversation:2026-08-13-approve-os016"
 acceptance_refs = ["docs/roadmap/implementation-roadmap.md#os016-task-local-capability-handle-decision"]
 evidence_refs = ["docs/architecture/decisions/0005-task-local-capability-handles.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
+
+[[work_items]]
+id = "OS030-CAPABILITY-HANDLE-TABLE"
+title = "Implement task-local capability tables and handle-first teardown"
+status = "closed"
+requirement_ids = ["REQ-EXPLICIT-CAPABILITIES", "REQ-TASK-SCHEDULING-IPC"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os030-capability-handle-table"]
+approval_ref = "conversation:2026-08-13-approve-os030"
+acceptance_refs = ["docs/architecture/decisions/0005-task-local-capability-handles.md#verification-contract-for-os030", "docs/roadmap/implementation-roadmap.md#os030-capability-handle-table"]
+evidence_refs = [".github/workflows/ci.yml", "README.md", "crates/task-runtime/Cargo.toml", "crates/task-runtime/src/lib.rs", "docs/architecture/decisions/0005-task-local-capability-handles.md", "docs/development/testing.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md", "docs/security/threat-model.md", "kernel/src/arch_x86_64.rs", "kernel/src/main.rs", "scripts/verify_dependency_features.py", "scripts/verify_exception_trampolines.py", "scripts/verify_uefi_boot.py", "tests/test_verify_dependency_features.py", "tests/test_verify_exception_trampolines.py", "tests/test_verify_uefi_boot.py"]
 
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"

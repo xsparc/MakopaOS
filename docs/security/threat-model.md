@@ -22,7 +22,11 @@ architecture nevertheless treats isolation claims as testable contracts.
 - one cooperative task cannot inherit another task's integer register or
   address-space context; and
 - bounded IPC cannot expose a user pointer, retain an exited receiver's value,
-  or leave a live endpoint generation after teardown.
+  or leave a live endpoint generation after teardown;
+- a zero, empty, closed, stale, cross-table, wrong-object, or wrong-right handle
+  cannot authorize endpoint access or partially mutate runtime state; and
+- address-space frames cannot be returned while the task's capability table or
+  endpoint side still references live state.
 
 ## Initial adversaries and failures
 
@@ -82,9 +86,14 @@ architecture nevertheless treats isolation claims as testable contracts.
   `IF`, `DF`, and `IOPL` flags;
 - exactly two generation-bound task slots, unique deterministic FIFO membership,
   one running task, and reverse-order teardown before another root is resumed;
-- one fixed-role endpoint with explicit occupancy and one inline `u64`, exact
+- one fixed endpoint with explicit occupancy and one inline `u64`, exact
   state-preserving rejections, block/wake and peer-close behavior, and no user
-  pointers, byte lengths, shared mappings, handles, or capabilities;
+  pointers, byte lengths, or shared mappings;
+- one kernel-owned 16-slot capability table per fixed task, with typed endpoint
+  entries, non-empty `SEND`, `RECEIVE`, and `DUPLICATE` rights, subset-only
+  same-task duplication, non-wrapping slot generations, and table-local lookup;
+- handle-first teardown that closes every table entry before detaching endpoint
+  and task references and before address-space invalidation and frame return;
 - deny-by-default capability manifests;
 - typed validation at every privilege and protocol boundary;
 - bounded queues, timeouts, cancellation, and replay protection;
@@ -102,15 +111,18 @@ mappings, SMEP, and SMAP remain deferred until the relevant subsystem exists.
 A roadmap item that introduces one of those boundaries must update this
 document before claiming coverage.
 
-## OS022 residual boundary
+## OS030 residual boundary
 
 The current containment and scheduling proof is deliberately narrow: two fixed
 integer-only probes run cooperatively on one emulated `qemu64` CPU with maskable
 interrupts disabled. The recovery root, guard pages, CPL-aware exception
 parsing, dedicated double-fault IST path, complete GPR switch, fixed FIFO, one
-inline endpoint, and reverse-order teardown are exercised by host,
-disassembly, and QEMU gates. They do not establish timer-preemptive scheduling,
-interrupt concurrency, SMP TLB coherence, SIMD or TLS switching, dynamic IPC,
-capability authorization, arbitrary user-binary loading, or real-hardware
-compatibility. Any such expansion must first define its synchronization,
-extended-state, ownership, invalidation, and rollback contract.
+inline endpoint, task-local 16-slot capability tables, rights attenuation,
+stale-handle rejection, and handle-first reverse-order teardown are exercised
+by host, disassembly, and QEMU gates. Selectors are not secret bearer tokens,
+and the evidence does not establish timer-preemptive scheduling, interrupt
+concurrency, SMP TLB coherence, SIMD or TLS switching, cross-task transfer,
+recursive revocation, dynamic tasks or objects, policy approval, effect
+logging, arbitrary user-binary loading, or real-hardware compatibility. Any
+such expansion must first define its synchronization, authority, ownership,
+invalidation, and rollback contract.

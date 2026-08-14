@@ -159,10 +159,11 @@ pub(crate) fn isolation_success() -> ! {
     unsafe { arch_x86_64::run_scheduler() }
 }
 
-pub(crate) fn ipc_success() -> ! {
+pub(crate) fn capability_success() -> ! {
     let mut serial = SerialPort::new(KERNEL_SERIAL);
     serial.initialize();
     let _ = serial.write_str("MakopaOS ipc v1 ok cooperative-two-task\r\n");
+    let _ = serial.write_str("MakopaOS capabilities v1 ok task-local-attenuation\r\n");
     exit_qemu(QEMU_SUCCESS)
 }
 

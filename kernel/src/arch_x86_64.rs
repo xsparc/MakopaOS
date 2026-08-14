@@ -23,8 +23,9 @@ use makopa_task_runtime::{
     CONTEXT_R15_OFFSET, CONTEXT_RAX_OFFSET, CONTEXT_RBP_OFFSET, CONTEXT_RBX_OFFSET,
     CONTEXT_RCX_OFFSET, CONTEXT_RDI_OFFSET, CONTEXT_RDX_OFFSET, CONTEXT_RFLAGS_OFFSET,
     CONTEXT_RIP_OFFSET, CONTEXT_ROOT_OFFSET, CONTEXT_RSI_OFFSET, CONTEXT_RSP_OFFSET,
-    CONTEXT_SS_OFFSET, ContextPolicy, DPL3_INTERRUPT_GATE_ATTRIBUTES, RECEIVER_TASK_ID, Runtime,
-    SENDER_TASK_ID, TaskContextV1, TaskState, TrapFrameV1, TrapOutcome, version_one_cr4_allowed,
+    CONTEXT_SS_OFFSET, CapabilityTableState, ContextPolicy, DPL3_INTERRUPT_GATE_ATTRIBUTES,
+    RECEIVER_TASK_ID, Runtime, SENDER_TASK_ID, TaskContextV1, TaskState, TrapFrameV1, TrapOutcome,
+    version_one_cr4_allowed,
 };
 use x86_64::{VirtAddr, instructions::tlb};
 
@@ -80,8 +81,43 @@ makopa_sender_probe:
     mov r14d, 0x1114
     mov r15d, 0x1115
     push 0x3131
+    mov eax, 4
+    mov edi, 0x10
+    mov esi, 1
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsender_failure
+    cmp rdx, 0x11
+    jne .Lsender_failure
+    cmp rdi, 0x10
+    jne .Lsender_failure
+    cmp rsi, 1
+    jne .Lsender_failure
+    push rdx
+
+    mov eax, 5
+    mov edi, 0x10
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsender_failure
+    cmp rdx, 0
+    jne .Lsender_failure
+
     mov eax, 1
-    mov edi, 1
+    mov edi, 0x10
+    mov rsi, 0x00004d414b4f5041
+    xor edx, edx
+    int 0x80
+    cmp rax, 6
+    jne .Lsender_failure
+    cmp rdx, 0
+    jne .Lsender_failure
+
+    mov eax, 1
+    mov rdi, qword ptr [rsp]
     mov rsi, 0x00004d414b4f5041
     xor edx, edx
     int 0x80
@@ -92,8 +128,21 @@ makopa_sender_probe:
     mov rax, 0x00004d414b4f5041
     cmp rsi, rax
     jne .Lsender_failure
-    cmp rdi, 1
+    cmp rdi, 0x11
     jne .Lsender_failure
+
+    mov eax, 5
+    mov rdi, qword ptr [rsp]
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsender_failure
+    cmp rdx, 0
+    jne .Lsender_failure
+    cmp qword ptr [rsp], 0x11
+    jne .Lsender_failure
+    add rsp, 8
     cmp ebx, 0x1101
     jne .Lsender_failure
     cmp ecx, 0x1102
@@ -147,7 +196,7 @@ makopa_receiver_probe:
     mov r15d, 0x2215
     push 0x4242
     mov eax, 2
-    mov edi, 1
+    mov edi, 0x10
     xor esi, esi
     xor edx, edx
     int 0x80
@@ -156,7 +205,7 @@ makopa_receiver_probe:
     mov rax, 0x00004d414b4f5041
     cmp rdx, rax
     jne .Lreceiver_failure
-    cmp rdi, 1
+    cmp rdi, 0x10
     jne .Lreceiver_failure
     cmp rsi, 0
     jne .Lreceiver_failure
@@ -181,6 +230,19 @@ makopa_receiver_probe:
     cmp r14d, 0x2214
     jne .Lreceiver_failure
     cmp r15d, 0x2215
+    jne .Lreceiver_failure
+    mov eax, 5
+    mov edi, 0x10
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lreceiver_failure
+    cmp rdx, 0
+    jne .Lreceiver_failure
+    cmp rdi, 0x10
+    jne .Lreceiver_failure
+    cmp rsi, 0
     jne .Lreceiver_failure
     cmp qword ptr [rsp], 0x4242
     jne .Lreceiver_failure
@@ -1173,17 +1235,34 @@ extern "sysv64" fn makopa_task_trap_dispatch(frame: *const TrapFrameV1) -> ! {
     let outcome = runtime
         .handle_trap(task)
         .unwrap_or_else(|_| crate::kernel_failure("trap state transition"));
-    unsafe {
-        *CURRENT_TASK.0.get() = 0;
-        *ACTIVE_CONTEXT.0.get() = ActiveContext::new();
-    }
     match outcome {
-        TrapOutcome::Resume(next) | TrapOutcome::Switch(next) => resume_scheduled_task(next),
+        TrapOutcome::Resume(next) | TrapOutcome::Switch(next) => {
+            unsafe {
+                *CURRENT_TASK.0.get() = 0;
+                *ACTIVE_CONTEXT.0.get() = ActiveContext::new();
+            }
+            resume_scheduled_task(next)
+        }
         TrapOutcome::Exit(exited) => teardown_exited_task(exited),
     }
 }
 
 fn teardown_exited_task(task: u64) -> ! {
+    let runtime = unsafe { &mut *TASK_RUNTIME.0.get() }
+        .as_mut()
+        .unwrap_or_else(|| crate::kernel_failure("teardown runtime missing"));
+    if runtime.begin_teardown(task).is_err()
+        || runtime
+            .capability_table(task)
+            .map(|table| table.state != CapabilityTableState::Closing || table.live_slots != 0)
+            .unwrap_or(true)
+    {
+        crate::kernel_failure("handle-first teardown")
+    }
+    unsafe {
+        *CURRENT_TASK.0.get() = 0;
+        *ACTIVE_CONTEXT.0.get() = ActiveContext::new();
+    }
     let owner = unsafe { &mut *TASK_OWNERS.0.get() }
         .take(task)
         .unwrap_or_else(|| crate::kernel_failure("exited owner missing"));
@@ -1199,9 +1278,7 @@ fn teardown_exited_task(task: u64) -> ! {
     if dead.state() != LifecycleState::Dead || !dead.ledger().is_empty() {
         crate::kernel_failure("exited ownership remains")
     }
-    let next = unsafe { &mut *TASK_RUNTIME.0.get() }
-        .as_mut()
-        .unwrap_or_else(|| crate::kernel_failure("teardown runtime missing"))
+    let next = runtime
         .complete_teardown(task)
         .unwrap_or_else(|_| crate::kernel_failure("teardown state transition"));
     match next {
@@ -1221,8 +1298,17 @@ fn scheduler_success() -> ! {
         || runtime.state(RECEIVER_TASK_ID) != Ok(TaskState::Dead)
         || runtime.generation(SENDER_TASK_ID) != Ok(0)
         || runtime.generation(RECEIVER_TASK_ID) != Ok(0)
+        || runtime
+            .capability_table(SENDER_TASK_ID)
+            .map(|table| table.state != CapabilityTableState::Dead || table.live_slots != 0)
+            .unwrap_or(true)
+        || runtime
+            .capability_table(RECEIVER_TASK_ID)
+            .map(|table| table.state != CapabilityTableState::Dead || table.live_slots != 0)
+            .unwrap_or(true)
         || queue_len != 0
         || queue != [0, 0]
+        || endpoint.object_generation != 0
         || endpoint.sender_task != 0
         || endpoint.sender_generation != 0
         || endpoint.receiver_task != 0
@@ -1235,7 +1321,7 @@ fn scheduler_success() -> ! {
     {
         crate::kernel_failure("scheduler residual state")
     }
-    crate::ipc_success()
+    crate::capability_success()
 }
 
 #[unsafe(naked)]

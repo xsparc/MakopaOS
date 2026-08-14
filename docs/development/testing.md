@@ -42,6 +42,13 @@ rejections, both peer-close directions, empty residual state, and bounded
 operation traces. Address-space tests additionally inject every failure in a
 second construction and prove that the already-built first owner is unwound
 before publication.
+The ADR-0005 tests cover exact selector encoding, zero and stale rejection,
+task-local lookup, object and rights precedence, subset-only attenuation,
+independent duplicate close, deterministic lowest-slot allocation and reuse,
+all 16 slots, full and retired-slot exhaustion, maximum-generation retirement,
+publication rollback at every initial-table step, peer-close behavior, and the
+observable `Live`-to-`Closing`-to-`Dead` handle-first teardown sequence. The
+task runtime remains `no_std`, fixed-storage, and dependency-free.
 Normalization remains capped at 1,024 fixed-size region records backed by a 24
 KiB loader-owned buffer. The static evidence check validates schema,
 traceability, local references, and accepted-decision coverage. The dated
@@ -91,8 +98,11 @@ check preserves the owned page-fault, general-protection, and double-fault
 checks and additionally proves that vector `0x80` captures all GPRs, installs
 the recovery root and stack checkpoint before Rust dispatch, and restores the
 task root and complete integer frame through `iretq`. It also inspects both
-fixed probes for their two trap operations, message constant, and deterministic
-failure transfer. CI obtains `llvm-objdump` from the pinned stable toolchain's
+fixed probes: the sender must issue duplicate, close, stale send, attenuated
+send, close, and exit in that order; the receiver must issue receive, close,
+and exit. The sender must require exact stale-handle status `6`, both probes
+must retain the message constant, and both retain deterministic failure
+transfer. CI obtains `llvm-objdump` from the pinned stable toolchain's
 `llvm-tools-preview` component; no nightly compiler is installed.
 
 ```sh
@@ -113,8 +123,9 @@ both:
   `MakopaOS handoff v1 ok framebuffer\r\n` and
   `MakopaOS frames v1 ok reuse\r\n`, followed by
   `MakopaOS isolation v1 ok user-fault-contained\r\n`, followed by
-  `MakopaOS ipc v1 ok cooperative-two-task\r\n`, appears once as the terminal
-  serial sequence after any firmware console records;
+  `MakopaOS ipc v1 ok cooperative-two-task\r\n`, followed by
+  `MakopaOS capabilities v1 ok task-local-attenuation\r\n`, appears once as
+  the terminal serial sequence after any firmware console records;
 - QEMU process status `33`, produced by writing success value `0x10` to port
   `0xf4`.
 
@@ -133,6 +144,15 @@ ownership state. The scenario does not reclaim loader-owned memory, exercise
 timer preemption, asynchronous interrupts, SMP or concurrent allocator access,
 load arbitrary user binaries, preserve SIMD or TLS state, or claim real-
 hardware compatibility.
+
+The capability record extends that same receiver-first run. Task 1 duplicates
+its initial `SEND | DUPLICATE` handle into a `SEND`-only handle, closes the
+source, proves selector `0x10` stale even though the peer table independently
+contains that number, sends the fixed value through selector `0x11`, and closes
+it. Task 2 receives through its own selector `0x10` and closes it. Runtime
+teardown then proves both tables empty and dead before the address-space owners
+can return frames. This evidence does not claim selector secrecy, cross-task
+transfer, recursive revocation, dynamic objects, policy, or effect logging.
 
 ## Dependency audit
 
