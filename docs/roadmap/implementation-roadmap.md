@@ -1,8 +1,8 @@
 # MakopaOS implementation roadmap
 
 - Status: Active; item states are recorded below
-- Baseline: `5d5a49de783dae05abbd4abc6f21b458aee640f9`
-- Updated: 2026-08-13
+- Baseline: `1ad7f728965ea828fdf66a25843ee5821769e14b`
+- Updated: 2026-08-28
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
 items describe sequence, not implementation authority. Each item should ship in
@@ -425,18 +425,67 @@ Non-scope: cross-task handle transfer, recursive revocation, random or secret
 bearer tokens, dynamic tasks, endpoints, or object storage, policy and
 approval, effect logging, releases, and phase promotion.
 
+### OS017 — Supervisor launch and approval decision
+
+Status: Closed
+
+Depends on: OS030
+
+Record the fixed trusted-supervisor, staged-workload, immutable launch-manifest,
+default-deny capability-route, approval-broker, synthetic-effect, rollback, and
+teardown contract required before OS031 adds policy and approval behavior.
+
+Decision:
+[ADR-0006](../architecture/decisions/0006-fixed-supervisor-and-approval-broker.md)
+selects task `1` as the prestarted trusted supervisor and task `2` as a staged
+hostile workload. A bounded static `LaunchManifestV1` publishes only declared
+workload routes. One kernel-owned broker binds a request to the principal, task,
+action, effect object, inline argument, exact rights, generations, request
+sequence, and decision epoch. Only the supervisor holds task-control,
+approval-decision, and synthetic-effect authority; commit validates and consumes
+one matching live approval atomically.
+
+Acceptance: the accepted decision defines `Staged` and `BlockedApproval` task
+states, exact fixed capability types and rights, manifest limits and validation,
+default-deny failure, parameter-bound single-use approval, non-wrapping request
+and decision epochs, deterministic expiry without a wall-clock claim, fixed
+synthetic effect enforcement, construction rollback, handle-first teardown, and
+the host, disassembly, and pinned one-vCPU QEMU evidence OS031 must provide.
+
+Non-scope: code, dependencies, CI changes, boot behavior, dynamic tasks or
+objects, cross-task transfer, recursive revocation, general policy language,
+credentials or authenticated identity, real external effects, effect logging,
+external authorization protocols, wall-clock expiry, preemption, releases, and
+phase promotion. OS031 implements this accepted contract without changing the
+decision.
+
 ### OS031 — Policy and approval boundary
 
 Status: Proposed
 
-Depends on: OS030
+Depends on: OS017
 
-Introduce a user-space supervisor that launches tasks from a declared capability
-manifest and pauses high-impact requests for approval.
+Implement ADR-0006's fixed user-space supervisor, staged workload, immutable
+launch manifest, default-deny capability routes, kernel approval-broker slot,
+and parameter-bound single-use approval for one synthetic effect.
 
-Acceptance: allow, deny, expiry, replay, and approval-timeout paths have
-deterministic tests; each decision binds the initiating principal, task,
-requested capability, and resulting authority without recording credentials.
+Acceptance: host tests cover exact manifest layout and limits, missing,
+unknown, duplicate, over-righted, stale, and capacity-failing routes,
+state-preserving launch rollback, supervisor-only start, hostile-workload
+authority isolation, exact request binding, allow, deny, decision-epoch expiry,
+deterministic timeout, alteration, replay, second use, sequence and epoch
+exhaustion, atomic effect commit, and approval-first teardown. Existing
+complete-context disassembly evidence remains intact. The pinned QEMU `qemu64`
+one-vCPU gate preserves all earlier transcripts, launches the staged workload,
+proves denial, expiry, altered-argument rejection, one exact commit, replay
+rejection, and empty broker, effect, capability, task, address-space, and frame
+state before emitting `MakopaOS approval v1 ok staged-single-use`.
+
+Non-scope: dynamic tasks or objects, cross-task transfer, recursive revocation,
+general policy language, credentials or human authentication, real external
+effects, effect logging, external protocols, wall-clock deadlines, preemption,
+releases, and phase promotion. The dependency-free runtime and single read-only
+CI job remain unchanged in topology unless separately approved.
 
 ### OS032 — Structured effect log
 
