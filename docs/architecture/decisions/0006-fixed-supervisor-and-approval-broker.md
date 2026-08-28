@@ -130,7 +130,7 @@ non-transferable entries:
 | --- | --- | --- | --- | --- |
 | `TaskControl` | `START` | `1 << 3` | supervisor | Launch task `2` from the registered manifest. |
 | `ApprovalBroker` | `SUBMIT_APPROVAL` | `1 << 4` | workload after launch | Submit one canonical request into the empty broker slot. |
-| `ApprovalBroker` | `DECIDE_APPROVAL` | `1 << 5` | supervisor | Inspect and approve, deny, or expire the pending request. |
+| `ApprovalBroker` | `DECIDE_APPROVAL` | `1 << 5` | supervisor | Inspect a pending request, approve or deny it, or expire a pending or approved request. |
 | `TestEffect` | `COMMIT_EFFECT` | `1 << 6` | supervisor | Commit the fixed synthetic effect when a live approval matches. |
 
 The existing `Endpoint` type and `SEND`, `RECEIVE`, and `DUPLICATE` rights keep
@@ -233,11 +233,12 @@ only `Approved` contains approval and expiry epochs. `Building`, `Closing`, and
 `Dead` reject task operations.
 
 The supervisor decides by presenting its live `DECIDE_APPROVAL` handle, the
-pending request sequence, and one exact decision code. The kernel binds an
-approval to the complete stored request rather than to a free-form label or
-user-supplied token. Approval records the resulting decision epoch and an
-expiry epoch exactly one accepted broker transition later. The workload remains
-blocked while approval is live.
+stored request sequence, and one exact decision code. Approve and deny are
+valid only while the request is `Pending`; explicit expiry is valid while it is
+`Pending` or `Approved`. The kernel binds an approval to the complete stored
+request rather than to a free-form label or user-supplied token. Approval
+records the resulting decision epoch and an expiry epoch exactly one accepted
+broker transition later. The workload remains blocked while approval is live.
 
 Denial consumes the pending request and wakes the workload with a denied result.
 An explicit supervisor expiry transition consumes a pending or approved request
@@ -300,20 +301,23 @@ removes reachability in this order:
 2. deny or expire that request, remove live approval and blocked-workload
    references, and clear the synthetic cell when its supervisor owner exits or
    the complete launch profile shuts down;
-3. close every live entry in the exiting task's table; during complete profile
+3. remove the affected manifest-publication, broker, and effect bindings and
+   prove that no request, approval, blocked-workload, synthetic-cell, task, or
+   table reference remains in those objects;
+4. close every live entry in the exiting task's table; during complete profile
    shutdown, close the workload and supervisor tables in reverse publication
-   order and prove that neither references the fixed objects;
-4. remove affected broker, effect, endpoint, blocked-state, run-queue, task, and
-   active-owner references;
-5. unmap and invalidate the inactive task address space; and
-6. return frames, clear task and object generations, and publish `Dead`.
+   order and prove that neither table references a fixed object;
+5. remove affected endpoint, blocked-state, run-queue, task, and active-owner
+   references;
+6. unmap and invalidate the inactive task address space; and
+7. return frames, clear task and object generations, and publish `Dead`.
 
-Supervisor exit first denies any pending workload request and makes future
-launch, decision, and commit unavailable. Workload exit removes its pending or
-approved request before its handle table closes. A frame cannot be returned
-while a manifest route, capability entry, broker request, approval, effect
-binding, endpoint side, queue entry, mapping, temporary alias, or active root
-can still reach task-owned state.
+Supervisor exit first denies a pending workload request or expires an approved
+one and makes future launch, decision, and commit unavailable. Workload exit
+removes its pending or approved request before its handle table closes. A
+frame cannot be returned while a manifest route, capability entry, broker
+request, approval, effect binding, endpoint side, queue entry, mapping,
+temporary alias, or active root can still reach task-owned state.
 
 ### Deterministic OS031 reference scenario
 
