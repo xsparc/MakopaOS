@@ -28,6 +28,18 @@ architecture nevertheless treats isolation claims as testable contracts.
 - address-space frames cannot be returned while the task's capability table or
   endpoint side still references live state.
 
+OS031 adds these protected-property targets; they are not current claims until
+that implementation and its evidence close:
+
+- a staged workload cannot run or resolve a capability before its complete
+  immutable launch manifest publishes;
+- a route absent from the manifest cannot become workload authority;
+- a workload cannot commit the synthetic high-impact effect because only the
+  trusted supervisor holds the effect capability; and
+- an approval authorizes only one commit whose principal, task, action,
+  resource, inline argument, rights, generations, sequence, and decision epoch
+  match the approved request.
+
 ## Initial adversaries and failures
 
 - malformed or hostile binaries;
@@ -47,7 +59,13 @@ architecture nevertheless treats isolation claims as testable contracts.
   services exit;
 - invalid pointers, lengths, handles, and IPC messages;
 - confused-deputy requests through a privileged service;
-- replayed, expired, or duplicated approvals;
+- missing, duplicated, over-righted, stale, or partially published manifest
+  routes;
+- approval-slot exhaustion, parameter alteration, stale generations, replayed,
+  expired, duplicated, or second-use approvals;
+- a hostile workload attempting to mint task-control, decision, or direct
+  effect authority;
+- a compromised trusted supervisor approving or committing an unsafe request;
 - malicious instructions embedded in repository, web, or message content;
 - compromised dependencies or mutable CI actions;
 - accidental contributor overreach and undocumented architecture drift.
@@ -94,10 +112,26 @@ architecture nevertheless treats isolation claims as testable contracts.
   same-task duplication, non-wrapping slot generations, and table-local lookup;
 - handle-first teardown that closes every table entry before detaching endpoint
   and task references and before address-space invalidation and frame return;
-- deny-by-default capability manifests;
+- an immutable, statically registered, fixed-layout launch manifest whose
+  complete capability route set validates before the staged workload becomes
+  runnable and whose absent routes deny authority by default;
+- fixed task-control, approval-broker, and synthetic-effect capability types
+  with object-specific rights and no duplication or cross-task transfer;
+- one bounded kernel approval slot that canonically binds principal, task,
+  action, resource, argument, rights, generations, sequence, and decision epoch;
+- single-use effect commit that validates the trusted supervisor's live effect
+  capability and the complete unexpired approval before atomically mutating the
+  synthetic effect and consuming the approval;
+- non-wrapping request sequences and boot-local decision epochs, with explicit
+  deterministic expiry and no wall-clock or availability claim;
+- rollback and teardown that remove broker, approval, and effect references
+  before capability entries, task and address-space references, mappings, and
+  owned frames;
 - typed validation at every privilege and protocol boundary;
-- bounded queues, timeouts, cancellation, and replay protection;
-- separate approval for irreversible or externally visible effects;
+- bounded queues and slots, explicit failure, cancellation, expiry, and replay
+  protection at each implemented boundary;
+- separate approval enforced by the effect executor before irreversible or
+  externally visible effects are introduced;
 - read-only automation permissions unless a work item requires more;
 - pinned workflow actions and explicit build-tool versions;
 - deterministic tests for every security invariant before phase promotion.
@@ -126,3 +160,21 @@ recursive revocation, dynamic tasks or objects, policy approval, effect
 logging, arbitrary user-binary loading, or real-hardware compatibility. Any
 such expansion must first define its synchronization, authority, ownership,
 invalidation, and rollback contract.
+
+## OS031 planned boundary
+
+ADR-0006 deliberately trusts task `1` as the fixed supervisor and treats task
+`2` as hostile. The planned kernel mechanism can prove staged launch,
+default-deny routes, task-local authority, exact request binding, deterministic
+decision-epoch expiry, and one atomic synthetic-effect commit. The effect is an
+in-memory test cell and the fixed supervisor decision vector is not a human,
+credential, authentication, or user-interface boundary.
+
+A compromised supervisor can use its task-control, decision, and effect
+capabilities to approve the fixed action and is therefore outside OS031's
+containment claim. OS031 also does not cover dynamic objects, cross-task
+transfer, recursive revocation, general policy evaluation, real device,
+network, storage, or credential effects, durable effect logging, wall-clock
+deadlines, preemptive availability, external authorization protocols, or
+arbitrary workloads. OS032 remains the separate decision and implementation
+boundary for ordered, bounded, redacted effect records.
