@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 
 from scripts.verify_uefi_boot import (
+    APPROVAL_SERIAL,
     CAPABILITY_SERIAL,
     EXPECTED_EXIT_CODE,
     EXPECTED_SERIAL,
@@ -44,21 +45,30 @@ class VerifyUefiBootTests(unittest.TestCase):
         errors = boot_violations(EXPECTED_EXIT_CODE, transcript)
         self.assertTrue(any("transcript mismatch" in error for error in errors))
 
-    def test_expected_transcript_preserves_ipc_before_terminal_capabilities(self) -> None:
-        self.assertTrue(EXPECTED_SERIAL.endswith(CAPABILITY_SERIAL))
+    def test_expected_transcript_preserves_prior_records_before_terminal_approval(self) -> None:
+        self.assertTrue(EXPECTED_SERIAL.endswith(APPROVAL_SERIAL))
         self.assertIn(HANDOFF_SERIAL, EXPECTED_SERIAL)
         self.assertIn(FRAME_SERIAL, EXPECTED_SERIAL)
         self.assertEqual(
-            FRAME_SERIAL + ISOLATION_SERIAL + IPC_SERIAL + CAPABILITY_SERIAL,
+            FRAME_SERIAL
+            + ISOLATION_SERIAL
+            + IPC_SERIAL
+            + CAPABILITY_SERIAL
+            + APPROVAL_SERIAL,
             EXPECTED_SERIAL[
                 -len(
                     FRAME_SERIAL
                     + ISOLATION_SERIAL
                     + IPC_SERIAL
                     + CAPABILITY_SERIAL
+                    + APPROVAL_SERIAL
                 ) :
             ],
         )
+
+    def test_rejects_capability_evidence_without_approval_evidence(self) -> None:
+        errors = boot_violations(EXPECTED_EXIT_CODE, EXPECTED_SERIAL[:-len(APPROVAL_SERIAL)])
+        self.assertTrue(any("transcript mismatch" in error for error in errors))
 
     def test_rejects_ipc_without_capability_evidence(self) -> None:
         errors = boot_violations(

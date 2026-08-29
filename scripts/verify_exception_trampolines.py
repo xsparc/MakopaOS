@@ -16,10 +16,17 @@ TRAMPOLINES = (
 )
 TASK_TRAMPOLINE = "makopa_task_trap_trampoline"
 TASK_RESUME = "makopa_resume_task"
-PROBES = ("makopa_sender_probe", "makopa_receiver_probe")
+PROBES = (
+    "makopa_sender_probe",
+    "makopa_receiver_probe",
+    "makopa_supervisor_probe",
+    "makopa_workload_probe",
+)
 PROBE_OPERATIONS = {
     "makopa_sender_probe": (4, 5, 1, 1, 5, 3),
     "makopa_receiver_probe": (2, 5, 3),
+    "makopa_supervisor_probe": (6, 6, 0, 8, 9, 0, 8, 9, 9, 10, 0, 8, 9, 10, 10, 10, 0, 3),
+    "makopa_workload_probe": (7, 7, 7, 3),
 }
 REQUIRED_SYMBOLS = TRAMPOLINES + (
     "makopa_exception_dispatch",
@@ -200,7 +207,7 @@ def disassembly_violations(disassembly: str) -> list[str]:
                 f"{probe} trap operation order mismatch: expected "
                 f"{expected_operations!r}, found {operations!r}"
             )
-        if "4d414b4f5041" not in body:
+        if probe in {"makopa_sender_probe", "makopa_receiver_probe"} and "4d414b4f5041" not in body:
             errors.append(f"{probe} lacks the fixed inline message evidence")
         if "hlt" not in body:
             errors.append(f"{probe} lacks deterministic failure transfer")
@@ -213,6 +220,25 @@ def disassembly_violations(disassembly: str) -> list[str]:
     receiver = bodies.get("makopa_receiver_probe", "")
     if not re.search(r"\$0x10,\s*%(?:e|r)di\b", receiver):
         errors.append("receiver probe lacks task-local selector evidence 0x10")
+    supervisor = bodies.get("makopa_supervisor_probe", "")
+    for selector in ("0x10", "0x11", "0x12"):
+        if not re.search(rf"\${selector},\s*%(?:e|r)di\b", supervisor):
+            errors.append(f"supervisor probe lacks fixed selector evidence {selector}")
+    for status in (12, 15):
+        if not re.search(rf"\$(?:0x{status:x}|{status}),\s*%rax\b", supervisor):
+            errors.append(f"supervisor probe lacks exact approval status {status}")
+    for argument in ("0x31", "0x32", "0x33", "0x34"):
+        if argument not in supervisor:
+            errors.append(f"supervisor probe lacks approval argument evidence {argument}")
+    workload = bodies.get("makopa_workload_probe", "")
+    if not re.search(r"\$0x10,\s*%(?:e|r)di\b", workload):
+        errors.append("workload probe lacks broker-submit selector evidence 0x10")
+    for status in (16, 17):
+        if not re.search(rf"\$(?:0x{status:x}|{status}),\s*%rax\b", workload):
+            errors.append(f"workload probe lacks exact approval result {status}")
+    for argument in ("0x31", "0x32", "0x33"):
+        if argument not in workload:
+            errors.append(f"workload probe lacks request argument evidence {argument}")
     return errors
 
 
@@ -245,7 +271,7 @@ def main() -> int:
         return 1
     print(
         "verify-exception-trampolines: stable exception, complete task-switch, "
-        "and capability-probe paths matched"
+        "capability, and approval-probe paths matched"
     )
     return 0
 

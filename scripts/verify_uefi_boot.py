@@ -16,6 +16,7 @@ FRAME_SERIAL = b"MakopaOS frames v1 ok reuse\r\n"
 ISOLATION_SERIAL = b"MakopaOS isolation v1 ok user-fault-contained\r\n"
 IPC_SERIAL = b"MakopaOS ipc v1 ok cooperative-two-task\r\n"
 CAPABILITY_SERIAL = b"MakopaOS capabilities v1 ok task-local-attenuation\r\n"
+APPROVAL_SERIAL = b"MakopaOS approval v1 ok staged-single-use\r\n"
 EXPECTED_SERIAL = (
     VERSION_SERIAL
     + HANDOFF_SERIAL
@@ -23,6 +24,7 @@ EXPECTED_SERIAL = (
     + ISOLATION_SERIAL
     + IPC_SERIAL
     + CAPABILITY_SERIAL
+    + APPROVAL_SERIAL
 )
 EXPECTED_EXIT_CODE = 33
 

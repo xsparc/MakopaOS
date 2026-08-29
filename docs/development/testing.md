@@ -49,6 +49,14 @@ all 16 slots, full and retired-slot exhaustion, maximum-generation retirement,
 publication rollback at every initial-table step, peer-close behavior, and the
 observable `Live`-to-`Closing`-to-`Dead` handle-first teardown sequence. The
 task runtime remains `no_std`, fixed-storage, and dependency-free.
+The ADR-0006 tests preserve that complete cooperative suite and separately
+cover the exact 32-byte route, 184-byte manifest, and 80-byte request layouts;
+fixed tagged object rights and generations; every default-deny manifest error;
+supervisor-only staged publication; rollback after every publication step;
+deny, approval, deterministic expiry, alteration, replay, second use, broker
+capacity, non-wrapping sequence and epoch exhaustion; atomic synthetic-effect
+commit; and approval-first teardown. `Runtime` occupies exactly 3,112 bytes and
+is compile-time asserted below the existing 64 KiB bound.
 Normalization remains capped at 1,024 fixed-size region records backed by a 24
 KiB loader-owned buffer. The static evidence check validates schema,
 traceability, local references, and accepted-decision coverage. The dated
@@ -104,6 +112,11 @@ and exit. The sender must require exact stale-handle status `6`, both probes
 must retain the message constant, and both retain deterministic failure
 transfer. CI obtains `llvm-objdump` from the pinned stable toolchain's
 `llvm-tools-preview` component; no nightly compiler is installed.
+The separate supervised probes are checked for the exact start, inspect, deny,
+approve, expire, altered commit, exact commit, replay, yield, and exit sequence.
+Their disassembly must retain fixed selectors, approval status values, inline
+arguments `31` through `34`, and the workload's denied and expired result checks
+without weakening any earlier probe assertion.
 
 ```sh
 python scripts/build_uefi.py
@@ -124,8 +137,9 @@ both:
   `MakopaOS frames v1 ok reuse\r\n`, followed by
   `MakopaOS isolation v1 ok user-fault-contained\r\n`, followed by
   `MakopaOS ipc v1 ok cooperative-two-task\r\n`, followed by
-  `MakopaOS capabilities v1 ok task-local-attenuation\r\n`, appears once as
-  the terminal serial sequence after any firmware console records;
+  `MakopaOS capabilities v1 ok task-local-attenuation\r\n`, followed by
+  `MakopaOS approval v1 ok staged-single-use\r\n`, appears once as the terminal
+  serial sequence after any firmware console records;
 - QEMU process status `33`, produced by writing success value `0x10` to port
   `0xf4`.
 
@@ -153,6 +167,17 @@ it. Task 2 receives through its own selector `0x10` and closes it. Runtime
 teardown then proves both tables empty and dead before the address-space owners
 can return frames. This evidence does not claim selector secrecy, cross-task
 transfer, recursive revocation, dynamic objects, policy, or effect logging.
+
+The approval record begins a second, separately constructed runtime profile;
+the earlier cooperative runtime and every prior serial record have already
+completed. Task 1 starts task 2 only through the exact registered manifest.
+Task 2 then observes one denial, one deterministic expiry, and one successful
+commit of argument `33`. Task 1 proves altered argument `34` and a replay of
+the consumed approval both fail before teardown verifies empty manifest,
+broker, effect, capability, task, address-space, and frame state. This proves
+only the fixed synthetic in-memory boundary: it does not claim human approval,
+authenticated identity, wall-clock expiry, policy-language evaluation, real
+effects, effect logging, external protocols, dynamic objects, or availability.
 
 ## Dependency audit
 

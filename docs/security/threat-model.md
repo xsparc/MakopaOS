@@ -28,8 +28,8 @@ architecture nevertheless treats isolation claims as testable contracts.
 - address-space frames cannot be returned while the task's capability table or
   endpoint side still references live state.
 
-OS031 adds these protected-property targets; they are not current claims until
-that implementation and its evidence close:
+The supervised runtime profile additionally protects these properties within
+the fixed OS031 reference boundary:
 
 - a staged workload cannot run or resolve a capability before its complete
   immutable launch manifest publishes;
@@ -161,10 +161,10 @@ logging, arbitrary user-binary loading, or real-hardware compatibility. Any
 such expansion must first define its synchronization, authority, ownership,
 invalidation, and rollback contract.
 
-## OS031 planned boundary
+## OS031 residual boundary
 
 ADR-0006 deliberately trusts task `1` as the fixed supervisor and treats task
-`2` as hostile. The planned kernel mechanism can prove staged launch,
+`2` as hostile. The implemented kernel mechanism proves staged launch,
 default-deny routes, task-local authority, exact request binding, deterministic
 decision-epoch expiry, and one atomic synthetic-effect commit. The effect is an
 in-memory test cell and the fixed supervisor decision vector is not a human,

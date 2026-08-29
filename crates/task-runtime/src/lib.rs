@@ -21,9 +21,39 @@ pub const CAPABILITY_GENERATION_MAX: u64 = (1_u64 << 60) - 1;
 pub const CAPABILITY_RIGHT_SEND: u64 = 1 << 0;
 pub const CAPABILITY_RIGHT_RECEIVE: u64 = 1 << 1;
 pub const CAPABILITY_RIGHT_DUPLICATE: u64 = 1 << 2;
-pub const CAPABILITY_RIGHTS_V1: u64 =
-    CAPABILITY_RIGHT_SEND | CAPABILITY_RIGHT_RECEIVE | CAPABILITY_RIGHT_DUPLICATE;
+pub const CAPABILITY_RIGHT_START: u64 = 1 << 3;
+pub const CAPABILITY_RIGHT_SUBMIT_APPROVAL: u64 = 1 << 4;
+pub const CAPABILITY_RIGHT_DECIDE_APPROVAL: u64 = 1 << 5;
+pub const CAPABILITY_RIGHT_COMMIT_EFFECT: u64 = 1 << 6;
+pub const CAPABILITY_RIGHTS_V1: u64 = CAPABILITY_RIGHT_SEND
+    | CAPABILITY_RIGHT_RECEIVE
+    | CAPABILITY_RIGHT_DUPLICATE
+    | CAPABILITY_RIGHT_START
+    | CAPABILITY_RIGHT_SUBMIT_APPROVAL
+    | CAPABILITY_RIGHT_DECIDE_APPROVAL
+    | CAPABILITY_RIGHT_COMMIT_EFFECT;
 pub const INITIAL_CAPABILITY_HANDLE: u64 = 1 << CAPABILITY_SLOT_BITS;
+pub const SUPERVISOR_TASK_CONTROL_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE;
+pub const SUPERVISOR_DECISION_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE + 1;
+pub const SUPERVISOR_EFFECT_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE + 2;
+pub const WORKLOAD_APPROVAL_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE;
+pub const SUPERVISOR_GENERATION: u64 = 4;
+pub const WORKLOAD_GENERATION: u64 = 5;
+pub const MANIFEST_SCHEMA_VERSION: u32 = 1;
+pub const MANIFEST_BYTE_SIZE: u32 = 184;
+pub const MANIFEST_ROUTE_COUNT_MAX: usize = 4;
+pub const MANIFEST_ID: u64 = 1;
+pub const PRINCIPAL_ID: u64 = 1;
+pub const WORKLOAD_IMAGE_ID: u64 = 1;
+pub const TASK_CONTROL_OBJECT_ID: u64 = 1;
+pub const APPROVAL_BROKER_OBJECT_ID: u64 = 1;
+pub const TEST_EFFECT_OBJECT_ID: u64 = 1;
+pub const FIXED_OBJECT_GENERATION: u64 = 1;
+pub const APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE: u64 = 1;
+pub const APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE: u64 = 1;
+pub const DECISION_DENY: u64 = 0;
+pub const DECISION_APPROVE: u64 = 1;
+pub const DECISION_EXPIRE: u64 = 2;
 pub const DPL3_INTERRUPT_GATE_ATTRIBUTES: u8 = 0xee;
 pub const CR4_FSGSBASE: u64 = 1 << 16;
 
@@ -34,9 +64,11 @@ pub const fn version_one_cr4_allowed(cr4: u64) -> bool {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u8)]
 pub enum TaskState {
+    Staged,
     Ready,
     Running,
     BlockedReceive,
+    BlockedApproval,
     Exited,
     Dead,
 }
@@ -52,7 +84,9 @@ pub enum OwnerPhase {
 impl TaskState {
     pub const fn owner_phase(self) -> OwnerPhase {
         match self {
-            Self::Ready | Self::BlockedReceive => OwnerPhase::Inactive,
+            Self::Staged | Self::Ready | Self::BlockedReceive | Self::BlockedApproval => {
+                OwnerPhase::Inactive
+            }
             Self::Running => OwnerPhase::Active,
             Self::Exited => OwnerPhase::Teardown,
             Self::Dead => OwnerPhase::Absent,
@@ -69,6 +103,11 @@ pub enum TrapOperation {
     Exit = 3,
     Duplicate = 4,
     Close = 5,
+    StartWorkload = 6,
+    SubmitApproval = 7,
+    InspectApproval = 8,
+    DecideApproval = 9,
+    CommitEffect = 10,
 }
 
 impl TrapOperation {
@@ -80,6 +119,11 @@ impl TrapOperation {
             3 => Some(Self::Exit),
             4 => Some(Self::Duplicate),
             5 => Some(Self::Close),
+            6 => Some(Self::StartWorkload),
+            7 => Some(Self::SubmitApproval),
+            8 => Some(Self::InspectApproval),
+            9 => Some(Self::DecideApproval),
+            10 => Some(Self::CommitEffect),
             _ => None,
         }
     }
@@ -100,7 +144,194 @@ pub enum TrapStatus {
     InvalidRights = 9,
     HandleTableFull = 10,
     GenerationExhausted = 11,
+    InvalidManifest = 12,
+    InvalidRequest = 13,
+    BrokerFull = 14,
+    ApprovalMismatch = 15,
+    ApprovalDenied = 16,
+    ApprovalExpired = 17,
+    EffectUnavailable = 18,
+    BrokerUnavailable = 19,
+    AlreadyLaunched = 20,
 }
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct LaunchRouteV1 {
+    pub object_type: u32,
+    pub reserved: u32,
+    pub object_id: u64,
+    pub object_generation: u64,
+    pub rights: u64,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct LaunchManifestV1 {
+    pub schema_version: u32,
+    pub byte_size: u32,
+    pub manifest_id: u64,
+    pub principal_id: u64,
+    pub target_task_id: u64,
+    pub target_generation: u64,
+    pub image_id: u64,
+    pub route_count: u32,
+    pub reserved: u32,
+    pub routes: [LaunchRouteV1; MANIFEST_ROUTE_COUNT_MAX],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ApprovalRequestV1 {
+    pub principal_id: u64,
+    pub workload_task_id: u64,
+    pub workload_generation: u64,
+    pub sequence: u64,
+    pub action_id: u64,
+    pub effect_object_id: u64,
+    pub effect_object_generation: u64,
+    pub argument: u64,
+    pub requested_rights: u64,
+    pub resulting_rights: u64,
+}
+
+pub const OBJECT_TYPE_ENDPOINT: u32 = 1;
+pub const OBJECT_TYPE_TASK_CONTROL: u32 = 2;
+pub const OBJECT_TYPE_APPROVAL_BROKER: u32 = 3;
+pub const OBJECT_TYPE_TEST_EFFECT: u32 = 4;
+
+pub const REGISTERED_LAUNCH_MANIFEST: LaunchManifestV1 = LaunchManifestV1 {
+    schema_version: MANIFEST_SCHEMA_VERSION,
+    byte_size: MANIFEST_BYTE_SIZE,
+    manifest_id: MANIFEST_ID,
+    principal_id: PRINCIPAL_ID,
+    target_task_id: RECEIVER_TASK_ID,
+    target_generation: WORKLOAD_GENERATION,
+    image_id: WORKLOAD_IMAGE_ID,
+    route_count: 1,
+    reserved: 0,
+    routes: [
+        LaunchRouteV1 {
+            object_type: OBJECT_TYPE_APPROVAL_BROKER,
+            reserved: 0,
+            object_id: APPROVAL_BROKER_OBJECT_ID,
+            object_generation: FIXED_OBJECT_GENERATION,
+            rights: CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+        },
+        LaunchRouteV1 {
+            object_type: 0,
+            reserved: 0,
+            object_id: 0,
+            object_generation: 0,
+            rights: 0,
+        },
+        LaunchRouteV1 {
+            object_type: 0,
+            reserved: 0,
+            object_id: 0,
+            object_generation: 0,
+            rights: 0,
+        },
+        LaunchRouteV1 {
+            object_type: 0,
+            reserved: 0,
+            object_id: 0,
+            object_generation: 0,
+            rights: 0,
+        },
+    ],
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ManifestError {
+    InvalidHeader,
+    InvalidIdentity,
+    InvalidTarget,
+    ExcessRoutes,
+    MissingRoute,
+    InvalidRoute,
+    DuplicateRoute,
+    InsufficientCapacity,
+    NonzeroUnusedRoute,
+}
+
+impl LaunchManifestV1 {
+    pub fn validate(
+        &self,
+        workload_generation: u64,
+        broker_generation: u64,
+        available_slots: usize,
+    ) -> Result<(), ManifestError> {
+        if self.schema_version != MANIFEST_SCHEMA_VERSION
+            || self.byte_size != MANIFEST_BYTE_SIZE
+            || self.reserved != 0
+        {
+            return Err(ManifestError::InvalidHeader);
+        }
+        if self.manifest_id != MANIFEST_ID
+            || self.principal_id != PRINCIPAL_ID
+            || self.image_id != WORKLOAD_IMAGE_ID
+            || self.manifest_id == 0
+            || self.principal_id == 0
+            || self.image_id == 0
+        {
+            return Err(ManifestError::InvalidIdentity);
+        }
+        if self.target_task_id != RECEIVER_TASK_ID
+            || self.target_generation != workload_generation
+            || workload_generation != WORKLOAD_GENERATION
+        {
+            return Err(ManifestError::InvalidTarget);
+        }
+        let route_count = self.route_count as usize;
+        if route_count > MANIFEST_ROUTE_COUNT_MAX {
+            return Err(ManifestError::ExcessRoutes);
+        }
+        if route_count == 0 {
+            return Err(ManifestError::MissingRoute);
+        }
+        if available_slots < route_count {
+            return Err(ManifestError::InsufficientCapacity);
+        }
+        for index in 0..route_count {
+            let route = self.routes[index];
+            if route.reserved != 0
+                || route.object_type != OBJECT_TYPE_APPROVAL_BROKER
+                || route.object_id != APPROVAL_BROKER_OBJECT_ID
+                || route.object_generation != broker_generation
+                || broker_generation != FIXED_OBJECT_GENERATION
+                || route.rights != CAPABILITY_RIGHT_SUBMIT_APPROVAL
+            {
+                return Err(ManifestError::InvalidRoute);
+            }
+            if self.routes[..index].iter().any(|earlier| {
+                earlier.object_type == route.object_type
+                    && earlier.object_id == route.object_id
+                    && earlier.object_generation == route.object_generation
+            }) {
+                return Err(ManifestError::DuplicateRoute);
+            }
+        }
+        if self.routes[route_count..]
+            .iter()
+            .any(|route| *route != LaunchRouteV1::default())
+        {
+            return Err(ManifestError::NonzeroUnusedRoute);
+        }
+        Ok(())
+    }
+}
+
+pub const MANIFEST_ROUTES_OFFSET: usize = offset_of!(LaunchManifestV1, routes);
+pub const APPROVAL_SEQUENCE_OFFSET: usize = offset_of!(ApprovalRequestV1, sequence);
+pub const APPROVAL_ARGUMENT_OFFSET: usize = offset_of!(ApprovalRequestV1, argument);
+
+const _: () = assert!(size_of::<LaunchRouteV1>() == 32);
+const _: () = assert!(size_of::<LaunchManifestV1>() == MANIFEST_BYTE_SIZE as usize);
+const _: () = assert!(MANIFEST_ROUTES_OFFSET == 56);
+const _: () = assert!(size_of::<ApprovalRequestV1>() == 80);
+const _: () = assert!(APPROVAL_SEQUENCE_OFFSET == 24);
+const _: () = assert!(APPROVAL_ARGUMENT_OFFSET == 56);
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -377,10 +608,8 @@ pub struct CapabilityTableSnapshot {
     pub retired_slots: usize,
 }
 
-const OBJECT_TYPE_ENDPOINT: u8 = 1;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct EndpointReference {
+struct ObjectReference {
     id: u64,
     generation: u64,
 }
@@ -389,9 +618,9 @@ struct EndpointReference {
 struct CapabilityEntry {
     task_id: u64,
     task_generation: u64,
-    object_type: u8,
+    object_type: u32,
     rights: u64,
-    endpoint: EndpointReference,
+    object: ObjectReference,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -450,23 +679,45 @@ impl CapabilityTable {
         }
     }
 
+    fn available_slots(&self) -> usize {
+        self.slots
+            .iter()
+            .filter(|slot| slot.entry.is_none() && !slot.retired)
+            .count()
+    }
+
     fn install_building(&mut self, rights: u64) -> Result<u64, RuntimeError> {
+        self.install_object_building(
+            OBJECT_TYPE_ENDPOINT,
+            ObjectReference {
+                id: ENDPOINT_ID,
+                generation: ENDPOINT_GENERATION,
+            },
+            rights,
+        )
+    }
+
+    fn install_object_building(
+        &mut self,
+        object_type: u32,
+        object: ObjectReference,
+        rights: u64,
+    ) -> Result<u64, RuntimeError> {
         if self.state != CapabilityTableState::Building
-            || !valid_rights(rights)
+            || !valid_rights(object_type, rights)
             || self.task_id == 0
             || self.task_generation == 0
+            || object.id == 0
+            || object.generation == 0
         {
             return Err(RuntimeError::CapabilityInvariant);
         }
         self.allocate(CapabilityEntry {
             task_id: self.task_id,
             task_generation: self.task_generation,
-            object_type: OBJECT_TYPE_ENDPOINT,
+            object_type,
             rights,
-            endpoint: EndpointReference {
-                id: ENDPOINT_ID,
-                generation: ENDPOINT_GENERATION,
-            },
+            object,
         })
         .map_err(|_| RuntimeError::CapabilityInvariant)
     }
@@ -495,6 +746,23 @@ impl CapabilityTable {
         raw: u64,
         required_right: u64,
     ) -> Result<CapabilityEntry, TrapStatus> {
+        self.resolve_typed(
+            task_id,
+            task_generation,
+            raw,
+            OBJECT_TYPE_ENDPOINT,
+            required_right,
+        )
+    }
+
+    fn resolve_typed(
+        &self,
+        task_id: u64,
+        task_generation: u64,
+        raw: u64,
+        object_type: u32,
+        required_right: u64,
+    ) -> Result<CapabilityEntry, TrapStatus> {
         if self.state != CapabilityTableState::Live
             || self.task_id != task_id
             || self.task_generation != task_generation
@@ -511,7 +779,7 @@ impl CapabilityTable {
         if entry.task_id != task_id || entry.task_generation != task_generation {
             return Err(TrapStatus::InvalidHandle);
         }
-        if entry.object_type != OBJECT_TYPE_ENDPOINT {
+        if entry.object_type != object_type {
             return Err(TrapStatus::WrongObject);
         }
         if entry.rights & required_right == 0 {
@@ -527,8 +795,16 @@ impl CapabilityTable {
         source: u64,
         requested_rights: u64,
     ) -> Result<u64, TrapStatus> {
-        let entry = self.resolve(task_id, task_generation, source, CAPABILITY_RIGHT_DUPLICATE)?;
-        if !valid_rights(requested_rights) || requested_rights & !entry.rights != 0 {
+        let entry = self.resolve_typed(
+            task_id,
+            task_generation,
+            source,
+            OBJECT_TYPE_ENDPOINT,
+            CAPABILITY_RIGHT_DUPLICATE,
+        )?;
+        if !valid_rights(OBJECT_TYPE_ENDPOINT, requested_rights)
+            || requested_rights & !entry.rights != 0
+        {
             return Err(TrapStatus::InvalidRights);
         }
         self.allocate(CapabilityEntry {
@@ -574,10 +850,22 @@ impl CapabilityTable {
     }
 
     fn begin_closing(&mut self) -> Result<(), RuntimeError> {
+        self.mark_closing()?;
+        self.close_all()
+    }
+
+    fn mark_closing(&mut self) -> Result<(), RuntimeError> {
         if self.state != CapabilityTableState::Live {
             return Err(RuntimeError::WrongState);
         }
         self.state = CapabilityTableState::Closing;
+        Ok(())
+    }
+
+    fn close_all(&mut self) -> Result<(), RuntimeError> {
+        if self.state != CapabilityTableState::Closing {
+            return Err(RuntimeError::WrongState);
+        }
         for slot in &mut self.slots {
             if slot.entry.is_some() {
                 Self::remove_entry(slot);
@@ -637,9 +925,9 @@ impl CapabilityTable {
                 && (entry.task_id != self.task_id
                     || entry.task_generation != self.task_generation
                     || entry.object_type == 0
-                    || !valid_rights(entry.rights)
-                    || entry.endpoint.id == 0
-                    || entry.endpoint.generation == 0)
+                    || !valid_rights(entry.object_type, entry.rights)
+                    || entry.object.id == 0
+                    || entry.object.generation == 0)
             {
                 return Err(RuntimeError::CapabilityInvariant);
             }
@@ -648,8 +936,26 @@ impl CapabilityTable {
     }
 }
 
-const fn valid_rights(rights: u64) -> bool {
-    rights != 0 && rights & !CAPABILITY_RIGHTS_V1 == 0
+const fn valid_rights(object_type: u32, rights: u64) -> bool {
+    if rights == 0 || rights & !CAPABILITY_RIGHTS_V1 != 0 {
+        return false;
+    }
+    match object_type {
+        OBJECT_TYPE_ENDPOINT => {
+            rights
+                & !(CAPABILITY_RIGHT_SEND | CAPABILITY_RIGHT_RECEIVE | CAPABILITY_RIGHT_DUPLICATE)
+                == 0
+        }
+        OBJECT_TYPE_TASK_CONTROL => rights == CAPABILITY_RIGHT_START,
+        OBJECT_TYPE_APPROVAL_BROKER => {
+            matches!(
+                rights,
+                CAPABILITY_RIGHT_SUBMIT_APPROVAL | CAPABILITY_RIGHT_DECIDE_APPROVAL
+            )
+        }
+        OBJECT_TYPE_TEST_EFFECT => rights == CAPABILITY_RIGHT_COMMIT_EFFECT,
+        _ => false,
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -659,6 +965,176 @@ struct TaskSlot {
     state: TaskState,
     context: TaskContextV1,
     capabilities: CapabilityTable,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum RuntimeProfile {
+    Cooperative,
+    Supervised,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum ApprovalBrokerState {
+    Building,
+    Empty,
+    Pending,
+    Approved,
+    Closing,
+    Dead,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ManifestPublication {
+    manifest_id: u64,
+    principal_id: u64,
+    target_task_id: u64,
+    target_generation: u64,
+    image_id: u64,
+    published: bool,
+}
+
+impl ManifestPublication {
+    const EMPTY: Self = Self {
+        manifest_id: 0,
+        principal_id: 0,
+        target_task_id: 0,
+        target_generation: 0,
+        image_id: 0,
+        published: false,
+    };
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ManifestPublicationSnapshot {
+    pub manifest_id: u64,
+    pub principal_id: u64,
+    pub target_task_id: u64,
+    pub target_generation: u64,
+    pub image_id: u64,
+    pub published: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ApprovalBroker {
+    state: ApprovalBrokerState,
+    object_generation: u64,
+    supervisor_task_id: u64,
+    supervisor_generation: u64,
+    workload_task_id: u64,
+    workload_generation: u64,
+    request_kind: u64,
+    request: ApprovalRequestV1,
+    request_present: bool,
+    next_sequence: u64,
+    sequence_exhausted: bool,
+    decision_epoch: u64,
+    approval_epoch: u64,
+    expiry_epoch: u64,
+}
+
+impl ApprovalBroker {
+    const DEAD: Self = Self {
+        state: ApprovalBrokerState::Dead,
+        object_generation: 0,
+        supervisor_task_id: 0,
+        supervisor_generation: 0,
+        workload_task_id: 0,
+        workload_generation: 0,
+        request_kind: 0,
+        request: ApprovalRequestV1 {
+            principal_id: 0,
+            workload_task_id: 0,
+            workload_generation: 0,
+            sequence: 0,
+            action_id: 0,
+            effect_object_id: 0,
+            effect_object_generation: 0,
+            argument: 0,
+            requested_rights: 0,
+            resulting_rights: 0,
+        },
+        request_present: false,
+        next_sequence: 0,
+        sequence_exhausted: false,
+        decision_epoch: 0,
+        approval_epoch: 0,
+        expiry_epoch: 0,
+    };
+
+    const fn building(supervisor_generation: u64, workload_generation: u64) -> Self {
+        Self {
+            state: ApprovalBrokerState::Building,
+            object_generation: FIXED_OBJECT_GENERATION,
+            supervisor_task_id: SENDER_TASK_ID,
+            supervisor_generation,
+            workload_task_id: RECEIVER_TASK_ID,
+            workload_generation,
+            request_kind: 0,
+            request: Self::DEAD.request,
+            request_present: false,
+            next_sequence: 1,
+            sequence_exhausted: false,
+            decision_epoch: 1,
+            approval_epoch: 0,
+            expiry_epoch: 0,
+        }
+    }
+
+    fn clear_request(&mut self) {
+        self.request_kind = 0;
+        self.request = Self::DEAD.request;
+        self.request_present = false;
+        self.approval_epoch = 0;
+        self.expiry_epoch = 0;
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ApprovalBrokerSnapshot {
+    pub state: ApprovalBrokerState,
+    pub object_generation: u64,
+    pub supervisor_task_id: u64,
+    pub supervisor_generation: u64,
+    pub workload_task_id: u64,
+    pub workload_generation: u64,
+    pub request_kind: u64,
+    pub request: ApprovalRequestV1,
+    pub request_present: bool,
+    pub next_sequence: u64,
+    pub sequence_exhausted: bool,
+    pub decision_epoch: u64,
+    pub approval_epoch: u64,
+    pub expiry_epoch: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SyntheticEffect {
+    object_generation: u64,
+    supervisor_task_id: u64,
+    supervisor_generation: u64,
+    occupied: bool,
+    value: u64,
+}
+
+impl SyntheticEffect {
+    const EMPTY: Self = Self {
+        object_generation: 0,
+        supervisor_task_id: 0,
+        supervisor_generation: 0,
+        occupied: false,
+        value: 0,
+    };
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SyntheticEffectSnapshot {
+    pub object_generation: u64,
+    pub supervisor_task_id: u64,
+    pub supervisor_generation: u64,
+    pub occupied: bool,
+    pub value: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -722,10 +1198,20 @@ impl RunQueue {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Runtime {
+    profile: RuntimeProfile,
     tasks: [TaskSlot; TASK_COUNT],
     queue: RunQueue,
     endpoint: EndpointSnapshot,
+    manifest: ManifestPublication,
+    broker: ApprovalBroker,
+    effect: SyntheticEffect,
 }
+
+pub const RUNTIME_METADATA_BYTES: usize = size_of::<Runtime>();
+pub const RUNTIME_METADATA_BYTES_V1: usize = 3_112;
+
+const _: () = assert!(RUNTIME_METADATA_BYTES == RUNTIME_METADATA_BYTES_V1);
+const _: () = assert!(RUNTIME_METADATA_BYTES < 64 * 1024);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum TrapOutcome {
@@ -749,6 +1235,9 @@ pub enum RuntimeError {
     EndpointInvariant,
     NoRunnableTask,
     CapabilityInvariant,
+    ManifestInvariant,
+    BrokerInvariant,
+    EffectInvariant,
     PublicationFailure,
 }
 
@@ -766,6 +1255,21 @@ impl Runtime {
         Self::construct(sender, receiver, None)
     }
 
+    pub fn new_supervised(
+        supervisor: TaskContextV1,
+        workload: TaskContextV1,
+    ) -> Result<Self, RuntimeError> {
+        if supervisor.task_id != SENDER_TASK_ID || workload.task_id != RECEIVER_TASK_ID {
+            return Err(RuntimeError::InvalidTask);
+        }
+        if supervisor.generation != SUPERVISOR_GENERATION
+            || workload.generation != WORKLOAD_GENERATION
+        {
+            return Err(RuntimeError::InvalidGeneration);
+        }
+        Self::construct_supervised(supervisor, workload, None)
+    }
+
     fn construct(
         sender: TaskContextV1,
         receiver: TaskContextV1,
@@ -776,8 +1280,19 @@ impl Runtime {
         Ok(runtime)
     }
 
+    fn construct_supervised(
+        supervisor: TaskContextV1,
+        workload: TaskContextV1,
+        fail_before_step: Option<usize>,
+    ) -> Result<Self, RuntimeError> {
+        let mut runtime = Self::unpublished_supervised(supervisor, workload);
+        runtime.publish_supervisor(fail_before_step)?;
+        Ok(runtime)
+    }
+
     fn unpublished(sender: TaskContextV1, receiver: TaskContextV1) -> Self {
         Self {
+            profile: RuntimeProfile::Cooperative,
             tasks: [
                 TaskSlot {
                     id: SENDER_TASK_ID,
@@ -803,6 +1318,50 @@ impl Runtime {
                 receiver_generation: 0,
                 occupied: false,
                 payload: 0,
+            },
+            manifest: ManifestPublication::EMPTY,
+            broker: ApprovalBroker::DEAD,
+            effect: SyntheticEffect::EMPTY,
+        }
+    }
+
+    fn unpublished_supervised(supervisor: TaskContextV1, workload: TaskContextV1) -> Self {
+        Self {
+            profile: RuntimeProfile::Supervised,
+            tasks: [
+                TaskSlot {
+                    id: SENDER_TASK_ID,
+                    generation: supervisor.generation,
+                    state: TaskState::Ready,
+                    context: supervisor,
+                    capabilities: CapabilityTable::building(SENDER_TASK_ID, supervisor.generation),
+                },
+                TaskSlot {
+                    id: RECEIVER_TASK_ID,
+                    generation: workload.generation,
+                    state: TaskState::Staged,
+                    context: workload,
+                    capabilities: CapabilityTable::building(RECEIVER_TASK_ID, workload.generation),
+                },
+            ],
+            queue: RunQueue::new(),
+            endpoint: EndpointSnapshot {
+                object_generation: 0,
+                sender_task: 0,
+                sender_generation: 0,
+                receiver_task: 0,
+                receiver_generation: 0,
+                occupied: false,
+                payload: 0,
+            },
+            manifest: ManifestPublication::EMPTY,
+            broker: ApprovalBroker::building(supervisor.generation, workload.generation),
+            effect: SyntheticEffect {
+                object_generation: FIXED_OBJECT_GENERATION,
+                supervisor_task_id: SENDER_TASK_ID,
+                supervisor_generation: supervisor.generation,
+                occupied: false,
+                value: 0,
             },
         }
     }
@@ -869,6 +1428,90 @@ impl Runtime {
         Ok(())
     }
 
+    fn publish_supervisor(&mut self, fail_before_step: Option<usize>) -> Result<(), RuntimeError> {
+        let mut installed = [0_u64; 3];
+        let mut installed_len = 0;
+        for (step, object_type, object_id, rights) in [
+            (
+                0,
+                OBJECT_TYPE_TASK_CONTROL,
+                TASK_CONTROL_OBJECT_ID,
+                CAPABILITY_RIGHT_START,
+            ),
+            (
+                1,
+                OBJECT_TYPE_APPROVAL_BROKER,
+                APPROVAL_BROKER_OBJECT_ID,
+                CAPABILITY_RIGHT_DECIDE_APPROVAL,
+            ),
+            (
+                2,
+                OBJECT_TYPE_TEST_EFFECT,
+                TEST_EFFECT_OBJECT_ID,
+                CAPABILITY_RIGHT_COMMIT_EFFECT,
+            ),
+        ] {
+            if fail_before_step == Some(step) {
+                self.rollback_supervisor_publication(&installed, installed_len);
+                return Err(RuntimeError::PublicationFailure);
+            }
+            let handle = match self.tasks[0].capabilities.install_object_building(
+                object_type,
+                ObjectReference {
+                    id: object_id,
+                    generation: FIXED_OBJECT_GENERATION,
+                },
+                rights,
+            ) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    self.rollback_supervisor_publication(&installed, installed_len);
+                    return Err(error);
+                }
+            };
+            installed[installed_len] = handle;
+            installed_len += 1;
+        }
+        if fail_before_step == Some(3) {
+            self.rollback_supervisor_publication(&installed, installed_len);
+            return Err(RuntimeError::PublicationFailure);
+        }
+        if let Err(error) = self.tasks[0].capabilities.publish() {
+            self.rollback_supervisor_publication(&installed, installed_len);
+            return Err(error);
+        }
+        self.broker.state = ApprovalBrokerState::Empty;
+        if fail_before_step == Some(4) {
+            self.rollback_supervisor_publication(&installed, installed_len);
+            return Err(RuntimeError::PublicationFailure);
+        }
+        if let Err(error) = self
+            .queue
+            .push(SENDER_TASK_ID)
+            .and_then(|_| self.validate())
+        {
+            self.rollback_supervisor_publication(&installed, installed_len);
+            return Err(error);
+        }
+        Ok(())
+    }
+
+    fn rollback_supervisor_publication(&mut self, installed: &[u64; 3], len: usize) {
+        for handle in installed[..len].iter().rev() {
+            self.tasks[0].capabilities.rollback_install(*handle);
+        }
+        self.queue = RunQueue::new();
+        self.manifest = ManifestPublication::EMPTY;
+        self.broker = ApprovalBroker::DEAD;
+        self.effect = SyntheticEffect::EMPTY;
+        for slot in &mut self.tasks {
+            slot.state = TaskState::Dead;
+            slot.generation = 0;
+            slot.context.clear_dead();
+            slot.capabilities = CapabilityTable::dead();
+        }
+    }
+
     fn rollback_publication(&mut self, installed: &[(u64, u64); TASK_COUNT], len: usize) {
         for (task, handle) in installed[..len].iter().rev() {
             if let Ok(slot) = self.slot_mut(*task) {
@@ -885,6 +1528,9 @@ impl Runtime {
             occupied: false,
             payload: 0,
         };
+        self.manifest = ManifestPublication::EMPTY;
+        self.broker = ApprovalBroker::DEAD;
+        self.effect = SyntheticEffect::EMPTY;
         for slot in &mut self.tasks {
             slot.state = TaskState::Dead;
             slot.generation = 0;
@@ -911,6 +1557,50 @@ impl Runtime {
 
     pub const fn endpoint(&self) -> EndpointSnapshot {
         self.endpoint
+    }
+
+    pub const fn profile(&self) -> RuntimeProfile {
+        self.profile
+    }
+
+    pub const fn manifest_publication(&self) -> ManifestPublicationSnapshot {
+        ManifestPublicationSnapshot {
+            manifest_id: self.manifest.manifest_id,
+            principal_id: self.manifest.principal_id,
+            target_task_id: self.manifest.target_task_id,
+            target_generation: self.manifest.target_generation,
+            image_id: self.manifest.image_id,
+            published: self.manifest.published,
+        }
+    }
+
+    pub const fn approval_broker(&self) -> ApprovalBrokerSnapshot {
+        ApprovalBrokerSnapshot {
+            state: self.broker.state,
+            object_generation: self.broker.object_generation,
+            supervisor_task_id: self.broker.supervisor_task_id,
+            supervisor_generation: self.broker.supervisor_generation,
+            workload_task_id: self.broker.workload_task_id,
+            workload_generation: self.broker.workload_generation,
+            request_kind: self.broker.request_kind,
+            request: self.broker.request,
+            request_present: self.broker.request_present,
+            next_sequence: self.broker.next_sequence,
+            sequence_exhausted: self.broker.sequence_exhausted,
+            decision_epoch: self.broker.decision_epoch,
+            approval_epoch: self.broker.approval_epoch,
+            expiry_epoch: self.broker.expiry_epoch,
+        }
+    }
+
+    pub const fn synthetic_effect(&self) -> SyntheticEffectSnapshot {
+        SyntheticEffectSnapshot {
+            object_generation: self.effect.object_generation,
+            supervisor_task_id: self.effect.supervisor_task_id,
+            supervisor_generation: self.effect.supervisor_generation,
+            occupied: self.effect.occupied,
+            value: self.effect.value,
+        }
     }
 
     pub fn capability_table(&self, task: u64) -> Result<CapabilityTableSnapshot, RuntimeError> {
@@ -1051,9 +1741,11 @@ impl Runtime {
                 return Err(RuntimeError::InvalidGeneration);
             }
             let expected_table_state = match slot.state {
-                TaskState::Ready | TaskState::Running | TaskState::BlockedReceive => {
-                    CapabilityTableState::Live
-                }
+                TaskState::Staged => CapabilityTableState::Building,
+                TaskState::Ready
+                | TaskState::Running
+                | TaskState::BlockedReceive
+                | TaskState::BlockedApproval => CapabilityTableState::Live,
                 TaskState::Exited => {
                     if !matches!(
                         slot.capabilities.state,
@@ -1068,6 +1760,23 @@ impl Runtime {
             if slot.capabilities.state != expected_table_state {
                 return Err(RuntimeError::CapabilityInvariant);
             }
+        }
+        match self.profile {
+            RuntimeProfile::Cooperative => self.validate_cooperative(),
+            RuntimeProfile::Supervised => self.validate_supervised(),
+        }
+    }
+
+    fn validate_cooperative(&self) -> Result<(), RuntimeError> {
+        if self
+            .tasks
+            .iter()
+            .any(|slot| matches!(slot.state, TaskState::Staged | TaskState::BlockedApproval))
+            || self.manifest != ManifestPublication::EMPTY
+            || self.broker != ApprovalBroker::DEAD
+            || self.effect != SyntheticEffect::EMPTY
+        {
+            return Err(RuntimeError::CapabilityInvariant);
         }
         let sender = &self.tasks[0];
         let receiver = &self.tasks[1];
@@ -1133,6 +1842,143 @@ impl Runtime {
         Ok(())
     }
 
+    fn validate_supervised(&self) -> Result<(), RuntimeError> {
+        const EMPTY_ENDPOINT: EndpointSnapshot = EndpointSnapshot {
+            object_generation: 0,
+            sender_task: 0,
+            sender_generation: 0,
+            receiver_task: 0,
+            receiver_generation: 0,
+            occupied: false,
+            payload: 0,
+        };
+        if self.endpoint != EMPTY_ENDPOINT
+            || self
+                .tasks
+                .iter()
+                .any(|slot| slot.state == TaskState::BlockedReceive)
+        {
+            return Err(RuntimeError::EndpointInvariant);
+        }
+        let supervisor = &self.tasks[0];
+        let workload = &self.tasks[1];
+        if supervisor.state != TaskState::Dead && supervisor.generation != SUPERVISOR_GENERATION {
+            return Err(RuntimeError::InvalidGeneration);
+        }
+        if workload.state != TaskState::Dead && workload.generation != WORKLOAD_GENERATION {
+            return Err(RuntimeError::InvalidGeneration);
+        }
+        if workload.state == TaskState::Staged {
+            if self.manifest != ManifestPublication::EMPTY
+                || workload.capabilities.state != CapabilityTableState::Building
+                || workload.capabilities.snapshot().live_slots != 0
+            {
+                return Err(RuntimeError::ManifestInvariant);
+            }
+        } else if workload.state != TaskState::Dead
+            && workload.capabilities.state != CapabilityTableState::Closing
+            && (!self.manifest.published
+                || self.manifest.manifest_id != MANIFEST_ID
+                || self.manifest.principal_id != PRINCIPAL_ID
+                || self.manifest.target_task_id != RECEIVER_TASK_ID
+                || self.manifest.target_generation != WORKLOAD_GENERATION
+                || self.manifest.image_id != WORKLOAD_IMAGE_ID)
+        {
+            return Err(RuntimeError::ManifestInvariant);
+        }
+        if workload.state == TaskState::Dead && self.manifest != ManifestPublication::EMPTY {
+            return Err(RuntimeError::ManifestInvariant);
+        }
+
+        match self.broker.state {
+            ApprovalBrokerState::Building => return Err(RuntimeError::BrokerInvariant),
+            ApprovalBrokerState::Empty => {
+                if self.broker.request_present
+                    || self.broker.request_kind != 0
+                    || self.broker.request != ApprovalRequestV1::default()
+                    || self.broker.approval_epoch != 0
+                    || self.broker.expiry_epoch != 0
+                {
+                    return Err(RuntimeError::BrokerInvariant);
+                }
+            }
+            ApprovalBrokerState::Pending => {
+                if !self.broker.request_present
+                    || self.broker.request_kind != APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE
+                    || self.broker.approval_epoch != 0
+                    || self.broker.expiry_epoch != 0
+                    || workload.state != TaskState::BlockedApproval
+                {
+                    return Err(RuntimeError::BrokerInvariant);
+                }
+            }
+            ApprovalBrokerState::Approved => {
+                if !self.broker.request_present
+                    || self.broker.request_kind != APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE
+                    || self.broker.approval_epoch == 0
+                    || self.broker.expiry_epoch != self.broker.approval_epoch.saturating_add(1)
+                    || workload.state != TaskState::BlockedApproval
+                {
+                    return Err(RuntimeError::BrokerInvariant);
+                }
+            }
+            ApprovalBrokerState::Closing | ApprovalBrokerState::Dead => {
+                if self.broker.request_present
+                    || self.broker.request_kind != 0
+                    || self.broker.request != ApprovalRequestV1::default()
+                    || self.broker.approval_epoch != 0
+                    || self.broker.expiry_epoch != 0
+                {
+                    return Err(RuntimeError::BrokerInvariant);
+                }
+            }
+        }
+        if self.broker.state != ApprovalBrokerState::Dead {
+            if self.broker.object_generation != FIXED_OBJECT_GENERATION
+                || self.broker.next_sequence == 0
+                || self.broker.decision_epoch == 0
+            {
+                return Err(RuntimeError::BrokerInvariant);
+            }
+        } else if self.broker != ApprovalBroker::DEAD {
+            return Err(RuntimeError::BrokerInvariant);
+        }
+        if self.broker.request_present {
+            let request = self.broker.request;
+            if request.principal_id != PRINCIPAL_ID
+                || request.workload_task_id != RECEIVER_TASK_ID
+                || request.workload_generation != WORKLOAD_GENERATION
+                || request.sequence == 0
+                || request.action_id != APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE
+                || request.effect_object_id != TEST_EFFECT_OBJECT_ID
+                || request.effect_object_generation != FIXED_OBJECT_GENERATION
+                || request.requested_rights != CAPABILITY_RIGHT_COMMIT_EFFECT
+                || request.resulting_rights != 0
+            {
+                return Err(RuntimeError::BrokerInvariant);
+            }
+        }
+        if self.effect.object_generation == 0 {
+            if self.effect != SyntheticEffect::EMPTY {
+                return Err(RuntimeError::EffectInvariant);
+            }
+        } else if self.effect.object_generation != FIXED_OBJECT_GENERATION
+            || self.effect.supervisor_task_id != SENDER_TASK_ID
+            || self.effect.supervisor_generation != SUPERVISOR_GENERATION
+            || (!self.effect.occupied && self.effect.value != 0)
+        {
+            return Err(RuntimeError::EffectInvariant);
+        }
+        if self.tasks.iter().all(|slot| slot.state == TaskState::Dead)
+            && (self.manifest != ManifestPublication::EMPTY
+                || self.broker != ApprovalBroker::DEAD
+                || self.effect != SyntheticEffect::EMPTY)
+        {
+            return Err(RuntimeError::BrokerInvariant);
+        }
+        Ok(())
+    }
+
     fn handle_trap_inner(&mut self, task: u64) -> Result<TrapOutcome, RuntimeError> {
         if self.running_task()? != task {
             return Err(RuntimeError::WrongState);
@@ -1159,6 +2005,21 @@ impl Runtime {
             TrapOperation::Exit => self.exit(task, input.rdi, input.rsi, input.rdx),
             TrapOperation::Duplicate => self.duplicate(task, input.rdi, input.rsi, input.rdx),
             TrapOperation::Close => self.close(task, input.rdi, input.rsi, input.rdx),
+            TrapOperation::StartWorkload => {
+                self.start_workload(task, input.rdi, input.rsi, input.rdx)
+            }
+            TrapOperation::SubmitApproval => {
+                self.submit_approval(task, input.rdi, input.rsi, input.rdx)
+            }
+            TrapOperation::InspectApproval => {
+                self.inspect_approval(task, input.rdi, input.rsi, input.rdx)
+            }
+            TrapOperation::DecideApproval => {
+                self.decide_approval(task, input.rdi, input.rsi, input.rdx)
+            }
+            TrapOperation::CommitEffect => {
+                self.commit_effect(task, input.rdi, input.rsi, input.rdx)
+            }
         }
     }
 
@@ -1295,10 +2156,467 @@ impl Runtime {
         Ok(TrapOutcome::Resume(task))
     }
 
+    fn start_workload(
+        &mut self,
+        task: u64,
+        handle: u64,
+        manifest_id: u64,
+        reserved: u64,
+    ) -> Result<TrapOutcome, RuntimeError> {
+        self.start_workload_with_failure(task, handle, manifest_id, reserved, None)
+    }
+
+    fn start_workload_with_failure(
+        &mut self,
+        task: u64,
+        handle: u64,
+        manifest_id: u64,
+        reserved: u64,
+        fail_before_step: Option<usize>,
+    ) -> Result<TrapOutcome, RuntimeError> {
+        let before = *self;
+        let status = if reserved != 0 {
+            Some(TrapStatus::InvalidOperation)
+        } else if self.profile != RuntimeProfile::Supervised {
+            Some(TrapStatus::WrongObject)
+        } else if let Err(status) = self.resolve_object(
+            task,
+            handle,
+            OBJECT_TYPE_TASK_CONTROL,
+            CAPABILITY_RIGHT_START,
+            TASK_CONTROL_OBJECT_ID,
+            FIXED_OBJECT_GENERATION,
+        ) {
+            Some(status)
+        } else if manifest_id != MANIFEST_ID {
+            Some(TrapStatus::InvalidManifest)
+        } else if self.tasks[1].state != TaskState::Staged {
+            Some(TrapStatus::AlreadyLaunched)
+        } else if REGISTERED_LAUNCH_MANIFEST
+            .validate(
+                self.tasks[1].generation,
+                self.broker.object_generation,
+                self.tasks[1].capabilities.available_slots(),
+            )
+            .is_err()
+        {
+            Some(TrapStatus::InvalidManifest)
+        } else {
+            None
+        };
+        if let Some(status) = status {
+            *self = before;
+            self.set_result(task, status, 0)?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+
+        if fail_before_step == Some(0) {
+            *self = before;
+            self.set_result(task, TrapStatus::InvalidManifest, 0)?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+
+        for route in
+            &REGISTERED_LAUNCH_MANIFEST.routes[..REGISTERED_LAUNCH_MANIFEST.route_count as usize]
+        {
+            if self.tasks[1]
+                .capabilities
+                .install_object_building(
+                    route.object_type,
+                    ObjectReference {
+                        id: route.object_id,
+                        generation: route.object_generation,
+                    },
+                    route.rights,
+                )
+                .is_err()
+            {
+                *self = before;
+                self.set_result(task, TrapStatus::InvalidManifest, 0)?;
+                return Ok(TrapOutcome::Resume(task));
+            }
+        }
+        if fail_before_step == Some(1) {
+            *self = before;
+            self.set_result(task, TrapStatus::InvalidManifest, 0)?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+        if self.tasks[1].capabilities.publish().is_err() {
+            *self = before;
+            self.set_result(task, TrapStatus::InvalidManifest, 0)?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+        if fail_before_step == Some(2) {
+            *self = before;
+            self.set_result(task, TrapStatus::InvalidManifest, 0)?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+        self.manifest = ManifestPublication {
+            manifest_id: MANIFEST_ID,
+            principal_id: PRINCIPAL_ID,
+            target_task_id: RECEIVER_TASK_ID,
+            target_generation: WORKLOAD_GENERATION,
+            image_id: WORKLOAD_IMAGE_ID,
+            published: true,
+        };
+        self.tasks[1].state = TaskState::Ready;
+        if fail_before_step == Some(3) {
+            *self = before;
+            self.set_result(task, TrapStatus::InvalidManifest, 0)?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+        self.queue.push(RECEIVER_TASK_ID)?;
+        self.set_result(task, TrapStatus::Ok, 0)?;
+        self.validate()?;
+        Ok(TrapOutcome::Resume(task))
+    }
+
+    fn submit_approval(
+        &mut self,
+        task: u64,
+        handle: u64,
+        request_kind: u64,
+        argument: u64,
+    ) -> Result<TrapOutcome, RuntimeError> {
+        let status = if self.profile != RuntimeProfile::Supervised {
+            Some(TrapStatus::WrongObject)
+        } else if let Err(status) = self.resolve_object(
+            task,
+            handle,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+            APPROVAL_BROKER_OBJECT_ID,
+            self.broker.object_generation,
+        ) {
+            Some(status)
+        } else if matches!(
+            self.broker.state,
+            ApprovalBrokerState::Building
+                | ApprovalBrokerState::Closing
+                | ApprovalBrokerState::Dead
+        ) || self.broker.sequence_exhausted
+            || self.broker.decision_epoch == u64::MAX
+        {
+            Some(TrapStatus::BrokerUnavailable)
+        } else if matches!(
+            self.broker.state,
+            ApprovalBrokerState::Pending | ApprovalBrokerState::Approved
+        ) {
+            Some(TrapStatus::BrokerFull)
+        } else if request_kind != APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE
+            || task != RECEIVER_TASK_ID
+            || self.manifest
+                != (ManifestPublication {
+                    manifest_id: MANIFEST_ID,
+                    principal_id: PRINCIPAL_ID,
+                    target_task_id: RECEIVER_TASK_ID,
+                    target_generation: WORKLOAD_GENERATION,
+                    image_id: WORKLOAD_IMAGE_ID,
+                    published: true,
+                })
+        {
+            Some(TrapStatus::InvalidRequest)
+        } else {
+            None
+        };
+        if let Some(status) = status {
+            self.set_result(task, status, 0)?;
+            self.validate()?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+
+        let sequence = self.broker.next_sequence;
+        let next_epoch = self
+            .broker
+            .decision_epoch
+            .checked_add(1)
+            .ok_or(RuntimeError::BrokerInvariant)?;
+        self.broker.request_kind = request_kind;
+        self.broker.request = ApprovalRequestV1 {
+            principal_id: PRINCIPAL_ID,
+            workload_task_id: RECEIVER_TASK_ID,
+            workload_generation: WORKLOAD_GENERATION,
+            sequence,
+            action_id: APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE,
+            effect_object_id: TEST_EFFECT_OBJECT_ID,
+            effect_object_generation: FIXED_OBJECT_GENERATION,
+            argument,
+            requested_rights: CAPABILITY_RIGHT_COMMIT_EFFECT,
+            resulting_rights: 0,
+        };
+        self.broker.request_present = true;
+        self.broker.state = ApprovalBrokerState::Pending;
+        self.broker.decision_epoch = next_epoch;
+        if sequence == u64::MAX {
+            self.broker.sequence_exhausted = true;
+        } else {
+            self.broker.next_sequence = sequence + 1;
+        }
+        self.slot_mut(task)?.state = TaskState::BlockedApproval;
+        let next = self.dispatch_next()?.ok_or(RuntimeError::NoRunnableTask)?;
+        self.validate()?;
+        Ok(TrapOutcome::Switch(next))
+    }
+
+    fn inspect_approval(
+        &mut self,
+        task: u64,
+        handle: u64,
+        reserved_kind: u64,
+        reserved_argument: u64,
+    ) -> Result<TrapOutcome, RuntimeError> {
+        let status = if reserved_kind != 0 || reserved_argument != 0 {
+            Some(TrapStatus::InvalidOperation)
+        } else if self.profile != RuntimeProfile::Supervised {
+            Some(TrapStatus::WrongObject)
+        } else if let Err(status) = self.resolve_object(
+            task,
+            handle,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_DECIDE_APPROVAL,
+            APPROVAL_BROKER_OBJECT_ID,
+            self.broker.object_generation,
+        ) {
+            Some(status)
+        } else if self.broker.state != ApprovalBrokerState::Pending || !self.broker.request_present
+        {
+            Some(
+                if matches!(
+                    self.broker.state,
+                    ApprovalBrokerState::Closing | ApprovalBrokerState::Dead
+                ) {
+                    TrapStatus::BrokerUnavailable
+                } else {
+                    TrapStatus::InvalidRequest
+                },
+            )
+        } else {
+            None
+        };
+        if let Some(status) = status {
+            self.set_result(task, status, 0)?;
+            self.validate()?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+        let request = self.broker.request;
+        let request_kind = self.broker.request_kind;
+        let context = &mut self.slot_mut(task)?.context;
+        context.rax = TrapStatus::Ok as u64;
+        context.rdi = request.sequence;
+        context.rsi = request_kind;
+        context.rdx = request.argument;
+        self.validate()?;
+        Ok(TrapOutcome::Resume(task))
+    }
+
+    fn decide_approval(
+        &mut self,
+        task: u64,
+        handle: u64,
+        sequence: u64,
+        decision: u64,
+    ) -> Result<TrapOutcome, RuntimeError> {
+        let status = if self.profile != RuntimeProfile::Supervised {
+            Some(TrapStatus::WrongObject)
+        } else if let Err(status) = self.resolve_object(
+            task,
+            handle,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_DECIDE_APPROVAL,
+            APPROVAL_BROKER_OBJECT_ID,
+            self.broker.object_generation,
+        ) {
+            Some(status)
+        } else if matches!(
+            self.broker.state,
+            ApprovalBrokerState::Closing | ApprovalBrokerState::Dead
+        ) {
+            Some(TrapStatus::BrokerUnavailable)
+        } else if !self.broker.request_present || self.broker.request.sequence != sequence {
+            Some(TrapStatus::ApprovalMismatch)
+        } else if !matches!(decision, DECISION_DENY | DECISION_APPROVE | DECISION_EXPIRE)
+            || (decision == DECISION_APPROVE && self.broker.state != ApprovalBrokerState::Pending)
+            || (decision == DECISION_DENY && self.broker.state != ApprovalBrokerState::Pending)
+            || (decision == DECISION_EXPIRE
+                && !matches!(
+                    self.broker.state,
+                    ApprovalBrokerState::Pending | ApprovalBrokerState::Approved
+                ))
+        {
+            Some(TrapStatus::InvalidRequest)
+        } else {
+            None
+        };
+        if let Some(status) = status {
+            self.set_result(task, status, 0)?;
+            self.validate()?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+
+        let reserve_expiry = decision == DECISION_APPROVE;
+        let Some(next_epoch) = self.broker.decision_epoch.checked_add(1) else {
+            self.fail_broker_epoch_exhaustion()?;
+            self.set_result(task, TrapStatus::BrokerUnavailable, 0)?;
+            self.validate()?;
+            return Ok(TrapOutcome::Resume(task));
+        };
+        if reserve_expiry && next_epoch == u64::MAX {
+            self.fail_broker_epoch_exhaustion()?;
+            self.set_result(task, TrapStatus::BrokerUnavailable, 0)?;
+            self.validate()?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+        self.broker.decision_epoch = next_epoch;
+        match decision {
+            DECISION_APPROVE => {
+                self.broker.state = ApprovalBrokerState::Approved;
+                self.broker.approval_epoch = next_epoch;
+                self.broker.expiry_epoch = next_epoch + 1;
+            }
+            DECISION_DENY => {
+                self.broker.clear_request();
+                self.broker.state = ApprovalBrokerState::Empty;
+                self.wake_workload(TrapStatus::ApprovalDenied, 0)?;
+            }
+            DECISION_EXPIRE => {
+                self.broker.clear_request();
+                self.broker.state = ApprovalBrokerState::Empty;
+                self.wake_workload(TrapStatus::ApprovalExpired, 0)?;
+            }
+            _ => return Err(RuntimeError::BrokerInvariant),
+        }
+        self.set_result(task, TrapStatus::Ok, 0)?;
+        self.validate()?;
+        Ok(TrapOutcome::Resume(task))
+    }
+
+    fn commit_effect(
+        &mut self,
+        task: u64,
+        handle: u64,
+        sequence: u64,
+        argument: u64,
+    ) -> Result<TrapOutcome, RuntimeError> {
+        let status = if self.profile != RuntimeProfile::Supervised {
+            Some(TrapStatus::WrongObject)
+        } else if let Err(status) = self.resolve_object(
+            task,
+            handle,
+            OBJECT_TYPE_TEST_EFFECT,
+            CAPABILITY_RIGHT_COMMIT_EFFECT,
+            TEST_EFFECT_OBJECT_ID,
+            self.effect.object_generation,
+        ) {
+            Some(status)
+        } else if self.broker.state != ApprovalBrokerState::Approved
+            || !self.broker.request_present
+            || self.broker.request.sequence != sequence
+            || self.broker.request.argument != argument
+            || self.broker.request.principal_id != PRINCIPAL_ID
+            || self.broker.request.workload_task_id != RECEIVER_TASK_ID
+            || self.broker.request.workload_generation != WORKLOAD_GENERATION
+            || self.broker.request.action_id != APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE
+            || self.broker.request.effect_object_id != TEST_EFFECT_OBJECT_ID
+            || self.broker.request.effect_object_generation != FIXED_OBJECT_GENERATION
+            || self.broker.request.requested_rights != CAPABILITY_RIGHT_COMMIT_EFFECT
+            || self.broker.request.resulting_rights != 0
+        {
+            Some(TrapStatus::ApprovalMismatch)
+        } else if self.effect.occupied {
+            Some(TrapStatus::EffectUnavailable)
+        } else if self.broker.decision_epoch >= self.broker.expiry_epoch {
+            Some(TrapStatus::ApprovalExpired)
+        } else {
+            None
+        };
+        if let Some(status) = status {
+            self.set_result(task, status, 0)?;
+            self.validate()?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+        let next_epoch = self
+            .broker
+            .decision_epoch
+            .checked_add(1)
+            .ok_or(RuntimeError::BrokerInvariant)?;
+        if next_epoch != self.broker.expiry_epoch {
+            self.set_result(task, TrapStatus::ApprovalExpired, 0)?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+        self.effect.occupied = true;
+        self.effect.value = argument;
+        self.broker.decision_epoch = next_epoch;
+        self.broker.clear_request();
+        self.broker.state = ApprovalBrokerState::Empty;
+        self.wake_workload(TrapStatus::Ok, argument)?;
+        self.set_result(task, TrapStatus::Ok, 0)?;
+        self.validate()?;
+        Ok(TrapOutcome::Resume(task))
+    }
+
+    fn wake_workload(&mut self, status: TrapStatus, value: u64) -> Result<(), RuntimeError> {
+        if self.slot(RECEIVER_TASK_ID)?.state != TaskState::BlockedApproval {
+            return Err(RuntimeError::BrokerInvariant);
+        }
+        self.set_result(RECEIVER_TASK_ID, status, value)?;
+        self.slot_mut(RECEIVER_TASK_ID)?.state = TaskState::Ready;
+        self.queue.push(RECEIVER_TASK_ID)
+    }
+
+    fn fail_broker_epoch_exhaustion(&mut self) -> Result<(), RuntimeError> {
+        if self.slot(RECEIVER_TASK_ID)?.state == TaskState::BlockedApproval {
+            self.wake_workload(TrapStatus::BrokerUnavailable, 0)?;
+        }
+        self.broker.clear_request();
+        self.broker.state = ApprovalBrokerState::Closing;
+        Ok(())
+    }
+
     fn begin_teardown_inner(&mut self, task: u64) -> Result<(), RuntimeError> {
         if self.slot(task)?.state != TaskState::Exited {
             return Err(RuntimeError::WrongState);
         }
+        if self.profile == RuntimeProfile::Supervised {
+            self.slot_mut(task)?.capabilities.mark_closing()?;
+            match task {
+                SENDER_TASK_ID => {
+                    if self.slot(RECEIVER_TASK_ID)?.state == TaskState::BlockedApproval {
+                        let terminal = match self.broker.state {
+                            ApprovalBrokerState::Pending => TrapStatus::ApprovalDenied,
+                            ApprovalBrokerState::Approved => TrapStatus::ApprovalExpired,
+                            _ => TrapStatus::BrokerUnavailable,
+                        };
+                        self.wake_workload(terminal, 0)?;
+                    }
+                    self.broker.clear_request();
+                    self.broker.state = ApprovalBrokerState::Closing;
+                    self.broker.supervisor_task_id = 0;
+                    self.broker.supervisor_generation = 0;
+                    self.effect = SyntheticEffect::EMPTY;
+                }
+                RECEIVER_TASK_ID => {
+                    self.manifest = ManifestPublication::EMPTY;
+                    self.broker.clear_request();
+                    if !matches!(
+                        self.broker.state,
+                        ApprovalBrokerState::Closing | ApprovalBrokerState::Dead
+                    ) {
+                        self.broker.state = if self.tasks[0].state == TaskState::Dead {
+                            ApprovalBrokerState::Closing
+                        } else {
+                            ApprovalBrokerState::Empty
+                        };
+                    }
+                    self.broker.workload_task_id = 0;
+                    self.broker.workload_generation = 0;
+                }
+                _ => return Err(RuntimeError::InvalidTask),
+            }
+            self.slot_mut(task)?.capabilities.close_all()?;
+            self.validate()?;
+            return Ok(());
+        }
+
         self.slot_mut(task)?.capabilities.begin_closing()?;
         match task {
             SENDER_TASK_ID => {
@@ -1335,6 +2653,10 @@ impl Runtime {
         slot.state = TaskState::Dead;
         slot.generation = 0;
         slot.context.clear_dead();
+        if self.profile == RuntimeProfile::Supervised && task == SENDER_TASK_ID {
+            self.broker = ApprovalBroker::DEAD;
+            self.effect = SyntheticEffect::EMPTY;
+        }
         if self.tasks.iter().all(|task| task.state == TaskState::Dead) {
             self.endpoint = EndpointSnapshot {
                 object_generation: 0,
@@ -1345,6 +2667,9 @@ impl Runtime {
                 occupied: false,
                 payload: 0,
             };
+            self.manifest = ManifestPublication::EMPTY;
+            self.broker = ApprovalBroker::DEAD;
+            self.effect = SyntheticEffect::EMPTY;
         }
         self.validate()?;
         self.dispatch_next()
@@ -1360,9 +2685,35 @@ impl Runtime {
         let entry = slot
             .capabilities
             .resolve(task, slot.generation, handle, required_right)?;
-        if entry.endpoint.id != ENDPOINT_ID
-            || entry.endpoint.generation != ENDPOINT_GENERATION
+        if entry.object.id != ENDPOINT_ID
+            || entry.object.generation != ENDPOINT_GENERATION
             || self.endpoint.object_generation != ENDPOINT_GENERATION
+        {
+            return Err(TrapStatus::InvalidHandle);
+        }
+        Ok(())
+    }
+
+    fn resolve_object(
+        &self,
+        task: u64,
+        handle: u64,
+        object_type: u32,
+        required_right: u64,
+        object_id: u64,
+        object_generation: u64,
+    ) -> Result<(), TrapStatus> {
+        let slot = self.slot(task).map_err(|_| TrapStatus::InvalidHandle)?;
+        let entry = slot.capabilities.resolve_typed(
+            task,
+            slot.generation,
+            handle,
+            object_type,
+            required_right,
+        )?;
+        if entry.object.id != object_id
+            || entry.object.generation != object_generation
+            || object_generation == 0
         {
             return Err(TrapStatus::InvalidHandle);
         }
@@ -1417,6 +2768,14 @@ mod tests {
         Runtime::new(context(1, 11, 0x1000), context(2, 12, 0x2000)).unwrap()
     }
 
+    fn supervised_runtime() -> Runtime {
+        Runtime::new_supervised(
+            context(1, SUPERVISOR_GENERATION, 0x3000),
+            context(2, WORKLOAD_GENERATION, 0x4000),
+        )
+        .unwrap()
+    }
+
     fn install_call(runtime: &mut Runtime, task: u64, operation: u64, a: u64, b: u64, c: u64) {
         let slot = runtime.slot_mut(task).unwrap();
         slot.context.rax = operation;
@@ -1443,6 +2802,55 @@ mod tests {
             TrapOutcome::Switch(SENDER_TASK_ID),
             invoke(runtime, RECEIVER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
         );
+    }
+
+    fn launch_and_run_workload(runtime: &mut Runtime) {
+        assert_eq!(Some(SENDER_TASK_ID), runtime.dispatch_next().unwrap());
+        assert_eq!(
+            TrapOutcome::Resume(SENDER_TASK_ID),
+            invoke(
+                runtime,
+                SENDER_TASK_ID,
+                TrapOperation::StartWorkload,
+                SUPERVISOR_TASK_CONTROL_HANDLE,
+                MANIFEST_ID,
+                0,
+            )
+        );
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke(runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+    }
+
+    fn submit_and_inspect(runtime: &mut Runtime, argument: u64) -> u64 {
+        assert_eq!(
+            TrapOutcome::Switch(SENDER_TASK_ID),
+            invoke(
+                runtime,
+                RECEIVER_TASK_ID,
+                TrapOperation::SubmitApproval,
+                WORKLOAD_APPROVAL_HANDLE,
+                APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+                argument,
+            )
+        );
+        assert_eq!(
+            TrapOutcome::Resume(SENDER_TASK_ID),
+            invoke(
+                runtime,
+                SENDER_TASK_ID,
+                TrapOperation::InspectApproval,
+                SUPERVISOR_DECISION_HANDLE,
+                0,
+                0,
+            )
+        );
+        let context = runtime.context(SENDER_TASK_ID).unwrap();
+        assert_eq!(TrapStatus::Ok as u64, context.rax);
+        assert_eq!(APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE, context.rsi);
+        assert_eq!(argument, context.rdx);
+        context.rdi
     }
 
     #[test]
@@ -1662,7 +3070,8 @@ mod tests {
             .entry
             .as_mut()
             .unwrap();
-        entry.object_type = 2;
+        entry.object_type = OBJECT_TYPE_TASK_CONTROL;
+        entry.rights = CAPABILITY_RIGHT_START;
         invoke(
             &mut sender,
             SENDER_TASK_ID,
@@ -1682,7 +3091,7 @@ mod tests {
             .entry
             .as_mut()
             .unwrap()
-            .endpoint
+            .object
             .generation += 1;
         let endpoint_before = stale_object.endpoint();
         invoke(
@@ -1883,12 +3292,26 @@ mod tests {
     fn appended_trap_values_and_reserved_argument_failures_are_stable() {
         assert_eq!(4, TrapOperation::Duplicate as u64);
         assert_eq!(5, TrapOperation::Close as u64);
+        assert_eq!(6, TrapOperation::StartWorkload as u64);
+        assert_eq!(7, TrapOperation::SubmitApproval as u64);
+        assert_eq!(8, TrapOperation::InspectApproval as u64);
+        assert_eq!(9, TrapOperation::DecideApproval as u64);
+        assert_eq!(10, TrapOperation::CommitEffect as u64);
         assert_eq!(6, TrapStatus::InvalidHandle as u64);
         assert_eq!(7, TrapStatus::WrongObject as u64);
         assert_eq!(8, TrapStatus::RightsDenied as u64);
         assert_eq!(9, TrapStatus::InvalidRights as u64);
         assert_eq!(10, TrapStatus::HandleTableFull as u64);
         assert_eq!(11, TrapStatus::GenerationExhausted as u64);
+        assert_eq!(12, TrapStatus::InvalidManifest as u64);
+        assert_eq!(13, TrapStatus::InvalidRequest as u64);
+        assert_eq!(14, TrapStatus::BrokerFull as u64);
+        assert_eq!(15, TrapStatus::ApprovalMismatch as u64);
+        assert_eq!(16, TrapStatus::ApprovalDenied as u64);
+        assert_eq!(17, TrapStatus::ApprovalExpired as u64);
+        assert_eq!(18, TrapStatus::EffectUnavailable as u64);
+        assert_eq!(19, TrapStatus::BrokerUnavailable as u64);
+        assert_eq!(20, TrapStatus::AlreadyLaunched as u64);
 
         let mut runtime = runtime();
         dispatch_sender(&mut runtime);
@@ -2351,5 +3774,748 @@ mod tests {
         let blocked = runtime;
         assert_eq!(Err(RuntimeError::WrongState), runtime.complete_teardown(2));
         assert_eq!(blocked, runtime);
+    }
+
+    #[test]
+    fn supervised_layout_manifest_and_runtime_footprint_are_fixed() {
+        assert_eq!(32, size_of::<LaunchRouteV1>());
+        assert_eq!(184, size_of::<LaunchManifestV1>());
+        assert_eq!(56, offset_of!(LaunchManifestV1, routes));
+        assert_eq!(80, size_of::<ApprovalRequestV1>());
+        assert_eq!(24, offset_of!(ApprovalRequestV1, sequence));
+        assert_eq!(56, offset_of!(ApprovalRequestV1, argument));
+        assert_eq!(size_of::<Runtime>(), RUNTIME_METADATA_BYTES);
+        assert_eq!(3_112, RUNTIME_METADATA_BYTES_V1);
+        assert_eq!(Ok(()), REGISTERED_LAUNCH_MANIFEST.validate(5, 1, 16));
+    }
+
+    #[test]
+    fn manifest_validation_is_default_deny_for_every_fixed_boundary() {
+        let cases = [
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.schema_version = 2;
+                    value
+                },
+                ManifestError::InvalidHeader,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.reserved = 1;
+                    value
+                },
+                ManifestError::InvalidHeader,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.manifest_id = 0;
+                    value
+                },
+                ManifestError::InvalidIdentity,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.target_generation += 1;
+                    value
+                },
+                ManifestError::InvalidTarget,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.route_count = 0;
+                    value
+                },
+                ManifestError::MissingRoute,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.route_count = 5;
+                    value
+                },
+                ManifestError::ExcessRoutes,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.routes[0].object_type = 99;
+                    value
+                },
+                ManifestError::InvalidRoute,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.routes[0].rights |= CAPABILITY_RIGHT_DECIDE_APPROVAL;
+                    value
+                },
+                ManifestError::InvalidRoute,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.routes[0].object_generation += 1;
+                    value
+                },
+                ManifestError::InvalidRoute,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.route_count = 2;
+                    value.routes[1] = value.routes[0];
+                    value
+                },
+                ManifestError::DuplicateRoute,
+            ),
+            (
+                {
+                    let mut value = REGISTERED_LAUNCH_MANIFEST;
+                    value.routes[1].reserved = 1;
+                    value
+                },
+                ManifestError::NonzeroUnusedRoute,
+            ),
+        ];
+        for (manifest, error) in cases {
+            assert_eq!(Err(error), manifest.validate(5, 1, 16));
+        }
+        assert_eq!(
+            Err(ManifestError::InvalidTarget),
+            REGISTERED_LAUNCH_MANIFEST.validate(6, 1, 16)
+        );
+        assert_eq!(
+            Err(ManifestError::InvalidRoute),
+            REGISTERED_LAUNCH_MANIFEST.validate(5, 2, 16)
+        );
+        assert_eq!(
+            Err(ManifestError::InsufficientCapacity),
+            REGISTERED_LAUNCH_MANIFEST.validate(5, 1, 0)
+        );
+    }
+
+    #[test]
+    fn supervised_publication_is_staged_exact_and_reverses_every_failure() {
+        assert_eq!(
+            Err(RuntimeError::InvalidGeneration),
+            Runtime::new_supervised(context(1, 6, 0x3000), context(2, 5, 0x4000))
+        );
+        let runtime = supervised_runtime();
+        assert_eq!(RuntimeProfile::Supervised, runtime.profile());
+        assert_eq!(([1, 0], 1), runtime.queue());
+        assert_eq!(TaskState::Ready, runtime.state(1).unwrap());
+        assert_eq!(TaskState::Staged, runtime.state(2).unwrap());
+        assert_eq!(3, runtime.capability_table(1).unwrap().live_slots);
+        assert_eq!(
+            CapabilityTableState::Building,
+            runtime.capability_table(2).unwrap().state
+        );
+        assert_eq!(0, runtime.capability_table(2).unwrap().live_slots);
+        assert!(!runtime.manifest_publication().published);
+        assert_eq!(ApprovalBrokerState::Empty, runtime.approval_broker().state);
+        assert_eq!(1, runtime.approval_broker().next_sequence);
+        assert_eq!(1, runtime.approval_broker().decision_epoch);
+        assert_eq!(
+            FIXED_OBJECT_GENERATION,
+            runtime.synthetic_effect().object_generation
+        );
+        runtime.validate().unwrap();
+
+        for step in 0..=4 {
+            let mut failed = Runtime::unpublished_supervised(
+                context(1, SUPERVISOR_GENERATION, 0x3000),
+                context(2, WORKLOAD_GENERATION, 0x4000),
+            );
+            assert_eq!(
+                Err(RuntimeError::PublicationFailure),
+                failed.publish_supervisor(Some(step))
+            );
+            assert_eq!(([0, 0], 0), failed.queue());
+            assert_eq!(TaskState::Dead, failed.state(1).unwrap());
+            assert_eq!(TaskState::Dead, failed.state(2).unwrap());
+            assert_eq!(ApprovalBrokerState::Dead, failed.approval_broker().state);
+            assert_eq!(0, failed.synthetic_effect().object_generation);
+            failed.validate().unwrap();
+        }
+
+        let mut launch = supervised_runtime();
+        launch.dispatch_next().unwrap();
+        install_call(
+            &mut launch,
+            SENDER_TASK_ID,
+            TrapOperation::StartWorkload as u64,
+            SUPERVISOR_TASK_CONTROL_HANDLE,
+            MANIFEST_ID,
+            0,
+        );
+        for step in 0..=3 {
+            let mut failed = launch;
+            let mut expected = launch;
+            expected.tasks[0].context.rax = TrapStatus::InvalidManifest as u64;
+            expected.tasks[0].context.rdx = 0;
+            assert_eq!(
+                TrapOutcome::Resume(SENDER_TASK_ID),
+                failed
+                    .start_workload_with_failure(
+                        SENDER_TASK_ID,
+                        SUPERVISOR_TASK_CONTROL_HANDLE,
+                        MANIFEST_ID,
+                        0,
+                        Some(step),
+                    )
+                    .unwrap()
+            );
+            assert_eq!(expected, failed);
+            assert_eq!(TaskState::Staged, failed.state(2).unwrap());
+            assert_eq!(0, failed.capability_table(2).unwrap().live_slots);
+            failed.validate().unwrap();
+        }
+    }
+
+    #[test]
+    fn only_supervisor_can_publish_the_exact_manifest_once() {
+        let mut runtime = supervised_runtime();
+        runtime.dispatch_next().unwrap();
+        install_call(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::StartWorkload as u64,
+            SUPERVISOR_TASK_CONTROL_HANDLE,
+            2,
+            0,
+        );
+        let mut expected = runtime;
+        expected.tasks[0].context.rax = TrapStatus::InvalidManifest as u64;
+        expected.tasks[0].context.rdx = 0;
+        assert_eq!(
+            TrapOutcome::Resume(SENDER_TASK_ID),
+            runtime.handle_trap(SENDER_TASK_ID).unwrap()
+        );
+        assert_eq!(expected, runtime);
+        assert_eq!(TaskState::Staged, runtime.state(2).unwrap());
+
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::StartWorkload,
+            SUPERVISOR_TASK_CONTROL_HANDLE,
+            MANIFEST_ID,
+            0,
+        );
+        assert!(runtime.manifest_publication().published);
+        assert_eq!(TaskState::Ready, runtime.state(2).unwrap());
+        assert_eq!(([2, 0], 1), runtime.queue());
+        assert_eq!(1, runtime.capability_table(2).unwrap().live_slots);
+
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::StartWorkload,
+            SUPERVISOR_TASK_CONTROL_HANDLE,
+            MANIFEST_ID,
+            0,
+        );
+        assert_eq!(
+            TrapStatus::AlreadyLaunched as u64,
+            runtime.context(1).unwrap().rax
+        );
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+        invoke(
+            &mut runtime,
+            RECEIVER_TASK_ID,
+            TrapOperation::StartWorkload,
+            WORKLOAD_APPROVAL_HANDLE,
+            MANIFEST_ID,
+            0,
+        );
+        assert_eq!(
+            TrapStatus::WrongObject as u64,
+            runtime.context(2).unwrap().rax
+        );
+    }
+
+    #[test]
+    fn supervised_handles_enforce_local_type_right_generation_and_reserved_fields() {
+        let mut wrong_type = supervised_runtime();
+        wrong_type.dispatch_next().unwrap();
+        invoke(
+            &mut wrong_type,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_TASK_CONTROL_HANDLE,
+            1,
+            DECISION_DENY,
+        );
+        assert_eq!(
+            TrapStatus::WrongObject as u64,
+            wrong_type.context(1).unwrap().rax
+        );
+
+        let mut stale = supervised_runtime();
+        stale.dispatch_next().unwrap();
+        invoke(
+            &mut stale,
+            SENDER_TASK_ID,
+            TrapOperation::Close,
+            SUPERVISOR_DECISION_HANDLE,
+            0,
+            0,
+        );
+        invoke(
+            &mut stale,
+            SENDER_TASK_ID,
+            TrapOperation::InspectApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            0,
+            0,
+        );
+        assert_eq!(
+            TrapStatus::InvalidHandle as u64,
+            stale.context(1).unwrap().rax
+        );
+
+        let mut generation = supervised_runtime();
+        generation.dispatch_next().unwrap();
+        generation.tasks[0].capabilities.slots[0]
+            .entry
+            .as_mut()
+            .unwrap()
+            .object
+            .generation += 1;
+        invoke(
+            &mut generation,
+            SENDER_TASK_ID,
+            TrapOperation::StartWorkload,
+            SUPERVISOR_TASK_CONTROL_HANDLE,
+            MANIFEST_ID,
+            0,
+        );
+        assert_eq!(
+            TrapStatus::InvalidHandle as u64,
+            generation.context(1).unwrap().rax
+        );
+
+        let mut reserved = supervised_runtime();
+        reserved.dispatch_next().unwrap();
+        invoke(
+            &mut reserved,
+            SENDER_TASK_ID,
+            TrapOperation::StartWorkload,
+            SUPERVISOR_TASK_CONTROL_HANDLE,
+            MANIFEST_ID,
+            1,
+        );
+        assert_eq!(
+            TrapStatus::InvalidOperation as u64,
+            reserved.context(1).unwrap().rax
+        );
+        invoke(
+            &mut reserved,
+            SENDER_TASK_ID,
+            TrapOperation::InspectApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            1,
+            0,
+        );
+        assert_eq!(
+            TrapStatus::InvalidOperation as u64,
+            reserved.context(1).unwrap().rax
+        );
+
+        let mut workload = supervised_runtime();
+        launch_and_run_workload(&mut workload);
+        invoke(
+            &mut workload,
+            RECEIVER_TASK_ID,
+            TrapOperation::DecideApproval,
+            WORKLOAD_APPROVAL_HANDLE,
+            1,
+            DECISION_DENY,
+        );
+        assert_eq!(
+            TrapStatus::RightsDenied as u64,
+            workload.context(2).unwrap().rax
+        );
+        invoke(
+            &mut workload,
+            RECEIVER_TASK_ID,
+            TrapOperation::Duplicate,
+            WORKLOAD_APPROVAL_HANDLE,
+            CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+            0,
+        );
+        assert_eq!(
+            TrapStatus::WrongObject as u64,
+            workload.context(2).unwrap().rax
+        );
+    }
+
+    #[test]
+    fn reference_approval_sequence_is_bound_single_use_and_atomic() {
+        const FIRST: u64 = 0x31;
+        const SECOND: u64 = 0x32;
+        const THIRD: u64 = 0x33;
+        let mut runtime = supervised_runtime();
+        launch_and_run_workload(&mut runtime);
+
+        let first_sequence = submit_and_inspect(&mut runtime, FIRST);
+        assert_eq!(1, first_sequence);
+        let first_request = runtime.approval_broker().request;
+        assert_eq!(PRINCIPAL_ID, first_request.principal_id);
+        assert_eq!(RECEIVER_TASK_ID, first_request.workload_task_id);
+        assert_eq!(WORKLOAD_GENERATION, first_request.workload_generation);
+        assert_eq!(
+            APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE,
+            first_request.action_id
+        );
+        assert_eq!(TEST_EFFECT_OBJECT_ID, first_request.effect_object_id);
+        assert_eq!(
+            FIXED_OBJECT_GENERATION,
+            first_request.effect_object_generation
+        );
+        assert_eq!(
+            CAPABILITY_RIGHT_COMMIT_EFFECT,
+            first_request.requested_rights
+        );
+        assert_eq!(0, first_request.resulting_rights);
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            first_sequence,
+            DECISION_DENY,
+        );
+        assert_eq!(TaskState::Ready, runtime.state(2).unwrap());
+        assert_eq!(
+            TrapStatus::ApprovalDenied as u64,
+            runtime.context(2).unwrap().rax
+        );
+        assert_eq!(ApprovalBrokerState::Empty, runtime.approval_broker().state);
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+
+        let second_sequence = submit_and_inspect(&mut runtime, SECOND);
+        assert_eq!(2, second_sequence);
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            second_sequence,
+            DECISION_APPROVE,
+        );
+        let approved = runtime.approval_broker();
+        assert_eq!(ApprovalBrokerState::Approved, approved.state);
+        assert_eq!(approved.approval_epoch + 1, approved.expiry_epoch);
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            second_sequence,
+            DECISION_EXPIRE,
+        );
+        assert_eq!(
+            TrapStatus::ApprovalExpired as u64,
+            runtime.context(2).unwrap().rax
+        );
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::CommitEffect,
+            SUPERVISOR_EFFECT_HANDLE,
+            second_sequence,
+            SECOND,
+        );
+        assert_eq!(
+            TrapStatus::ApprovalMismatch as u64,
+            runtime.context(1).unwrap().rax
+        );
+        assert!(!runtime.synthetic_effect().occupied);
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+
+        let third_sequence = submit_and_inspect(&mut runtime, THIRD);
+        assert_eq!(3, third_sequence);
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            third_sequence,
+            DECISION_APPROVE,
+        );
+        install_call(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::CommitEffect as u64,
+            SUPERVISOR_EFFECT_HANDLE,
+            third_sequence,
+            THIRD + 1,
+        );
+        let mut expected = runtime;
+        expected.tasks[0].context.rax = TrapStatus::ApprovalMismatch as u64;
+        expected.tasks[0].context.rdx = 0;
+        runtime.handle_trap(SENDER_TASK_ID).unwrap();
+        assert_eq!(expected, runtime);
+
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::CommitEffect,
+            SUPERVISOR_EFFECT_HANDLE,
+            third_sequence,
+            THIRD,
+        );
+        assert_eq!(THIRD, runtime.synthetic_effect().value);
+        assert_eq!(TaskState::Ready, runtime.state(2).unwrap());
+        assert_eq!(TrapStatus::Ok as u64, runtime.context(2).unwrap().rax);
+        assert_eq!(THIRD, runtime.context(2).unwrap().rdx);
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::CommitEffect,
+            SUPERVISOR_EFFECT_HANDLE,
+            third_sequence,
+            THIRD,
+        );
+        assert_eq!(
+            TrapStatus::ApprovalMismatch as u64,
+            runtime.context(1).unwrap().rax
+        );
+        runtime.validate().unwrap();
+    }
+
+    #[test]
+    fn occupied_synthetic_effect_fails_closed_without_consuming_approval() {
+        let mut runtime = supervised_runtime();
+        launch_and_run_workload(&mut runtime);
+        let first_sequence = submit_and_inspect(&mut runtime, 0x41);
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            first_sequence,
+            DECISION_APPROVE,
+        );
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::CommitEffect,
+            SUPERVISOR_EFFECT_HANDLE,
+            first_sequence,
+            0x41,
+        );
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+
+        let second_sequence = submit_and_inspect(&mut runtime, 0x42);
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            second_sequence,
+            DECISION_APPROVE,
+        );
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::CommitEffect,
+            SUPERVISOR_EFFECT_HANDLE,
+            second_sequence,
+            0x42,
+        );
+        assert_eq!(
+            TrapStatus::EffectUnavailable as u64,
+            runtime.context(1).unwrap().rax
+        );
+        assert_eq!(0x41, runtime.synthetic_effect().value);
+        assert_eq!(
+            ApprovalBrokerState::Approved,
+            runtime.approval_broker().state
+        );
+        assert!(runtime.approval_broker().request_present);
+        assert_eq!(TaskState::BlockedApproval, runtime.state(2).unwrap());
+        invoke(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            second_sequence,
+            DECISION_EXPIRE,
+        );
+        assert_eq!(
+            TrapStatus::ApprovalExpired as u64,
+            runtime.context(2).unwrap().rax
+        );
+        runtime.validate().unwrap();
+    }
+
+    #[test]
+    fn broker_capacity_sequence_and_epoch_exhaustion_fail_closed() {
+        let mut full = supervised_runtime();
+        launch_and_run_workload(&mut full);
+        invoke(
+            &mut full,
+            RECEIVER_TASK_ID,
+            TrapOperation::SubmitApproval,
+            WORKLOAD_APPROVAL_HANDLE,
+            APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+            1,
+        );
+        assert_eq!(ApprovalBrokerState::Pending, full.approval_broker().state);
+        full.submit_approval(
+            RECEIVER_TASK_ID,
+            WORKLOAD_APPROVAL_HANDLE,
+            APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+            2,
+        )
+        .unwrap();
+        assert_eq!(TrapStatus::BrokerFull as u64, full.context(2).unwrap().rax);
+        assert_eq!(1, full.approval_broker().request.argument);
+
+        let mut sequence = supervised_runtime();
+        launch_and_run_workload(&mut sequence);
+        sequence.broker.next_sequence = u64::MAX;
+        invoke(
+            &mut sequence,
+            RECEIVER_TASK_ID,
+            TrapOperation::SubmitApproval,
+            WORKLOAD_APPROVAL_HANDLE,
+            APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+            7,
+        );
+        assert_eq!(u64::MAX, sequence.approval_broker().request.sequence);
+        assert!(sequence.approval_broker().sequence_exhausted);
+        invoke(
+            &mut sequence,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            u64::MAX,
+            DECISION_DENY,
+        );
+        invoke(&mut sequence, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0);
+        invoke(
+            &mut sequence,
+            RECEIVER_TASK_ID,
+            TrapOperation::SubmitApproval,
+            WORKLOAD_APPROVAL_HANDLE,
+            APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+            8,
+        );
+        assert_eq!(
+            TrapStatus::BrokerUnavailable as u64,
+            sequence.context(2).unwrap().rax
+        );
+        assert_eq!(u64::MAX, sequence.approval_broker().next_sequence);
+
+        let mut epoch = supervised_runtime();
+        launch_and_run_workload(&mut epoch);
+        let pending = submit_and_inspect(&mut epoch, 9);
+        epoch.broker.decision_epoch = u64::MAX;
+        invoke(
+            &mut epoch,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            pending,
+            DECISION_DENY,
+        );
+        assert_eq!(
+            TrapStatus::BrokerUnavailable as u64,
+            epoch.context(1).unwrap().rax
+        );
+        assert_eq!(
+            TrapStatus::BrokerUnavailable as u64,
+            epoch.context(2).unwrap().rax
+        );
+        assert_eq!(ApprovalBrokerState::Closing, epoch.approval_broker().state);
+        assert_eq!(TaskState::Ready, epoch.state(2).unwrap());
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke(&mut epoch, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+        invoke(&mut epoch, RECEIVER_TASK_ID, TrapOperation::Exit, 0, 0, 0);
+        epoch.begin_teardown(RECEIVER_TASK_ID).unwrap();
+        assert_eq!(ApprovalBrokerState::Closing, epoch.approval_broker().state);
+    }
+
+    #[test]
+    fn approval_references_are_removed_before_handles_and_final_state_is_empty() {
+        let mut runtime = supervised_runtime();
+        launch_and_run_workload(&mut runtime);
+        submit_and_inspect(&mut runtime, 0x77);
+        invoke(&mut runtime, SENDER_TASK_ID, TrapOperation::Exit, 0, 0, 0);
+        runtime.begin_teardown(SENDER_TASK_ID).unwrap();
+        assert_eq!(
+            ApprovalBrokerState::Closing,
+            runtime.approval_broker().state
+        );
+        assert!(!runtime.approval_broker().request_present);
+        assert_eq!(0, runtime.approval_broker().supervisor_task_id);
+        assert_eq!(0, runtime.synthetic_effect().object_generation);
+        assert_eq!(
+            CapabilityTableState::Closing,
+            runtime.capability_table(1).unwrap().state
+        );
+        assert_eq!(0, runtime.capability_table(1).unwrap().live_slots);
+        assert_eq!(
+            TrapStatus::ApprovalDenied as u64,
+            runtime.context(2).unwrap().rax
+        );
+        assert_eq!(
+            Some(RECEIVER_TASK_ID),
+            runtime.complete_teardown(1).unwrap()
+        );
+
+        invoke(&mut runtime, RECEIVER_TASK_ID, TrapOperation::Exit, 0, 0, 0);
+        runtime.begin_teardown(RECEIVER_TASK_ID).unwrap();
+        assert!(!runtime.manifest_publication().published);
+        assert_eq!(0, runtime.capability_table(2).unwrap().live_slots);
+        assert_eq!(None, runtime.complete_teardown(2).unwrap());
+        assert_eq!(ApprovalBrokerState::Dead, runtime.approval_broker().state);
+        assert_eq!(0, runtime.synthetic_effect().object_generation);
+        assert_eq!(([0, 0], 0), runtime.queue());
+        runtime.validate().unwrap();
+
+        let mut approved = supervised_runtime();
+        launch_and_run_workload(&mut approved);
+        let sequence = submit_and_inspect(&mut approved, 0x78);
+        invoke(
+            &mut approved,
+            SENDER_TASK_ID,
+            TrapOperation::DecideApproval,
+            SUPERVISOR_DECISION_HANDLE,
+            sequence,
+            DECISION_APPROVE,
+        );
+        invoke(&mut approved, SENDER_TASK_ID, TrapOperation::Exit, 0, 0, 0);
+        approved.begin_teardown(SENDER_TASK_ID).unwrap();
+        assert_eq!(
+            TrapStatus::ApprovalExpired as u64,
+            approved.context(2).unwrap().rax
+        );
+        assert!(!approved.approval_broker().request_present);
+        assert_eq!(0, approved.synthetic_effect().object_generation);
+        assert_eq!(0, approved.capability_table(1).unwrap().live_slots);
+        approved.validate().unwrap();
     }
 }

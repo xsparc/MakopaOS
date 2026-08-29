@@ -18,13 +18,14 @@ use makopa_address_space::{
 };
 use makopa_frame_allocator::FrameAllocator;
 use makopa_task_runtime::{
-    CONTEXT_CS_OFFSET, CONTEXT_R8_OFFSET, CONTEXT_R9_OFFSET, CONTEXT_R10_OFFSET,
-    CONTEXT_R11_OFFSET, CONTEXT_R12_OFFSET, CONTEXT_R13_OFFSET, CONTEXT_R14_OFFSET,
-    CONTEXT_R15_OFFSET, CONTEXT_RAX_OFFSET, CONTEXT_RBP_OFFSET, CONTEXT_RBX_OFFSET,
-    CONTEXT_RCX_OFFSET, CONTEXT_RDI_OFFSET, CONTEXT_RDX_OFFSET, CONTEXT_RFLAGS_OFFSET,
-    CONTEXT_RIP_OFFSET, CONTEXT_ROOT_OFFSET, CONTEXT_RSI_OFFSET, CONTEXT_RSP_OFFSET,
-    CONTEXT_SS_OFFSET, CapabilityTableState, ContextPolicy, DPL3_INTERRUPT_GATE_ATTRIBUTES,
-    RECEIVER_TASK_ID, Runtime, SENDER_TASK_ID, TaskContextV1, TaskState, TrapFrameV1, TrapOutcome,
+    ApprovalBrokerState, CONTEXT_CS_OFFSET, CONTEXT_R8_OFFSET, CONTEXT_R9_OFFSET,
+    CONTEXT_R10_OFFSET, CONTEXT_R11_OFFSET, CONTEXT_R12_OFFSET, CONTEXT_R13_OFFSET,
+    CONTEXT_R14_OFFSET, CONTEXT_R15_OFFSET, CONTEXT_RAX_OFFSET, CONTEXT_RBP_OFFSET,
+    CONTEXT_RBX_OFFSET, CONTEXT_RCX_OFFSET, CONTEXT_RDI_OFFSET, CONTEXT_RDX_OFFSET,
+    CONTEXT_RFLAGS_OFFSET, CONTEXT_RIP_OFFSET, CONTEXT_ROOT_OFFSET, CONTEXT_RSI_OFFSET,
+    CONTEXT_RSP_OFFSET, CONTEXT_SS_OFFSET, CapabilityTableState, ContextPolicy,
+    DPL3_INTERRUPT_GATE_ATTRIBUTES, RECEIVER_TASK_ID, Runtime, RuntimeProfile, SENDER_TASK_ID,
+    SUPERVISOR_GENERATION, TaskContextV1, TaskState, TrapFrameV1, TrapOutcome, WORKLOAD_GENERATION,
     version_one_cr4_allowed,
 };
 use x86_64::{VirtAddr, instructions::tlb};
@@ -257,6 +258,213 @@ makopa_receiver_probe:
     .size makopa_receiver_probe, .-makopa_receiver_probe
     .global makopa_receiver_probe_end
 makopa_receiver_probe_end:
+
+    .balign 16
+    .global makopa_supervisor_probe
+    .type makopa_supervisor_probe,@function
+makopa_supervisor_probe:
+    mov eax, 6
+    mov edi, 0x10
+    mov esi, 2
+    xor edx, edx
+    int 0x80
+    cmp rax, 12
+    jne .Lsupervisor_failure
+    cmp rdx, 0
+    jne .Lsupervisor_failure
+
+    mov eax, 6
+    mov edi, 0x10
+    mov esi, 1
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    cmp rdx, 0
+    jne .Lsupervisor_failure
+
+    mov eax, 0
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+
+    mov eax, 8
+    mov edi, 0x11
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    cmp rdi, 1
+    jne .Lsupervisor_failure
+    cmp rsi, 1
+    jne .Lsupervisor_failure
+    cmp rdx, 0x31
+    jne .Lsupervisor_failure
+    push rdi
+    mov eax, 9
+    mov edi, 0x11
+    mov rsi, qword ptr [rsp]
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    add rsp, 8
+
+    mov eax, 0
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+
+    mov eax, 8
+    mov edi, 0x11
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    cmp rdi, 2
+    jne .Lsupervisor_failure
+    cmp rsi, 1
+    jne .Lsupervisor_failure
+    cmp rdx, 0x32
+    jne .Lsupervisor_failure
+    push rdi
+    mov eax, 9
+    mov edi, 0x11
+    mov rsi, qword ptr [rsp]
+    mov edx, 1
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    mov eax, 9
+    mov edi, 0x11
+    mov rsi, qword ptr [rsp]
+    mov edx, 2
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    mov eax, 10
+    mov edi, 0x12
+    mov rsi, qword ptr [rsp]
+    mov edx, 0x32
+    int 0x80
+    cmp rax, 15
+    jne .Lsupervisor_failure
+    add rsp, 8
+
+    mov eax, 0
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+
+    mov eax, 8
+    mov edi, 0x11
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    cmp rdi, 3
+    jne .Lsupervisor_failure
+    cmp rsi, 1
+    jne .Lsupervisor_failure
+    cmp rdx, 0x33
+    jne .Lsupervisor_failure
+    push rdi
+    mov eax, 9
+    mov edi, 0x11
+    mov rsi, qword ptr [rsp]
+    mov edx, 1
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    mov eax, 10
+    mov edi, 0x12
+    mov rsi, qword ptr [rsp]
+    mov edx, 0x34
+    int 0x80
+    cmp rax, 15
+    jne .Lsupervisor_failure
+    mov eax, 10
+    mov edi, 0x12
+    mov rsi, qword ptr [rsp]
+    mov edx, 0x33
+    int 0x80
+    cmp rax, 0
+    jne .Lsupervisor_failure
+    mov eax, 10
+    mov edi, 0x12
+    mov rsi, qword ptr [rsp]
+    mov edx, 0x33
+    int 0x80
+    cmp rax, 15
+    jne .Lsupervisor_failure
+    add rsp, 8
+
+    mov eax, 0
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    mov eax, 3
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+.Lsupervisor_failure:
+    hlt
+    .size makopa_supervisor_probe, .-makopa_supervisor_probe
+    .global makopa_supervisor_probe_end
+makopa_supervisor_probe_end:
+
+    .balign 16
+    .global makopa_workload_probe
+    .type makopa_workload_probe,@function
+makopa_workload_probe:
+    mov eax, 7
+    mov edi, 0x10
+    mov esi, 1
+    mov edx, 0x31
+    int 0x80
+    cmp rax, 16
+    jne .Lworkload_failure
+    cmp rdx, 0
+    jne .Lworkload_failure
+
+    mov eax, 7
+    mov edi, 0x10
+    mov esi, 1
+    mov edx, 0x32
+    int 0x80
+    cmp rax, 17
+    jne .Lworkload_failure
+    cmp rdx, 0
+    jne .Lworkload_failure
+
+    mov eax, 7
+    mov edi, 0x10
+    mov esi, 1
+    mov edx, 0x33
+    int 0x80
+    cmp rax, 0
+    jne .Lworkload_failure
+    cmp rdx, 0x33
+    jne .Lworkload_failure
+    mov eax, 3
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+.Lworkload_failure:
+    hlt
+    .size makopa_workload_probe, .-makopa_workload_probe
+    .global makopa_workload_probe_end
+makopa_workload_probe_end:
+    nop
     .previous
 "#
 );
@@ -554,6 +762,10 @@ unsafe extern "C" {
     static makopa_sender_probe_end: u8;
     static makopa_receiver_probe: u8;
     static makopa_receiver_probe_end: u8;
+    static makopa_supervisor_probe: u8;
+    static makopa_supervisor_probe_end: u8;
+    static makopa_workload_probe: u8;
+    static makopa_workload_probe_end: u8;
 }
 
 struct BootstrapBuilder {
@@ -1126,6 +1338,110 @@ pub unsafe fn run_scheduler() -> ! {
     resume_scheduled_task(next)
 }
 
+pub unsafe fn run_supervised_scheduler() -> ! {
+    let recovery = unsafe { *RECOVERY_STATE.0.get() };
+    if !recovery.ready || read_cr3() != recovery.root {
+        crate::kernel_failure("supervised recovery root")
+    }
+    if unsafe { (&*TASK_OWNER.0.get()).is_some() }
+        || unsafe { (&*TASK_RUNTIME.0.get()).is_some() }
+        || !unsafe { &*TASK_OWNERS.0.get() }.is_empty()
+    {
+        crate::kernel_failure("supervised publication state")
+    }
+
+    let allocator = unsafe { crate::frame_allocator() };
+    let mut backend = KernelBackend { allocator };
+    let pair = match construct_address_space_pair(
+        SUPERVISOR_GENERATION,
+        WORKLOAD_GENERATION,
+        &mut backend,
+    ) {
+        Ok(pair) => pair,
+        Err(PairBuildFailure::First(failure))
+            if failure.rollback_error.is_none() && failure.retained.is_empty() =>
+        {
+            crate::kernel_failure("supervised first address space")
+        }
+        Err(PairBuildFailure::Second {
+            second,
+            first_teardown,
+        }) if second.rollback_error.is_none()
+            && second.retained.is_empty()
+            && first_teardown.is_none() =>
+        {
+            crate::kernel_failure("supervised second address space")
+        }
+        Err(_) => crate::kernel_failure("supervised construction rollback"),
+    };
+
+    let supervisor_root = pair
+        .first
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("supervisor root missing"));
+    let workload_root = pair
+        .second
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("workload root missing"));
+    let supervisor_context = TaskContextV1::initial(
+        SENDER_TASK_ID,
+        SUPERVISOR_GENERATION,
+        supervisor_root,
+        USER_TEXT,
+        USER_STACK_TOP,
+        u64::from(USER_CODE_SELECTOR),
+        u64::from(USER_DATA_SELECTOR),
+    );
+    let workload_context = TaskContextV1::initial(
+        RECEIVER_TASK_ID,
+        WORKLOAD_GENERATION,
+        workload_root,
+        USER_TEXT,
+        USER_STACK_TOP,
+        u64::from(USER_CODE_SELECTOR),
+        u64::from(USER_DATA_SELECTOR),
+    );
+    let contexts_valid = supervisor_context
+        .validate(
+            SENDER_TASK_ID,
+            SUPERVISOR_GENERATION,
+            supervisor_root,
+            task_context_policy(),
+        )
+        .is_ok()
+        && workload_context
+            .validate(
+                RECEIVER_TASK_ID,
+                WORKLOAD_GENERATION,
+                workload_root,
+                task_context_policy(),
+            )
+            .is_ok();
+    let mut runtime = Runtime::new_supervised(supervisor_context, workload_context).ok();
+    if !contexts_valid || runtime.is_none() {
+        let second_ok = teardown_checked(pair.second, &mut backend).is_ok();
+        let first_ok = teardown_checked(pair.first, &mut backend).is_ok();
+        if !second_ok || !first_ok {
+            crate::kernel_failure("supervised publication rollback")
+        }
+        crate::kernel_failure("supervised initial context")
+    }
+    let next = runtime
+        .as_mut()
+        .and_then(|runtime| runtime.dispatch_next().ok().flatten())
+        .filter(|task| *task == SENDER_TASK_ID)
+        .unwrap_or_else(|| crate::kernel_failure("supervised initial dispatch"));
+
+    unsafe {
+        *TASK_OWNERS.0.get() = TaskOwners {
+            sender: Some(pair.first),
+            receiver: Some(pair.second),
+        };
+        *TASK_RUNTIME.0.get() = runtime;
+    }
+    resume_scheduled_task(next)
+}
+
 fn resume_scheduled_task(task: u64) -> ! {
     let runtime = unsafe { &mut *TASK_RUNTIME.0.get() }
         .as_mut()
@@ -1293,7 +1609,8 @@ fn scheduler_success() -> ! {
         .unwrap_or_else(|| crate::kernel_failure("final runtime missing"));
     let (queue, queue_len) = runtime.queue();
     let endpoint = runtime.endpoint();
-    if runtime.validate().is_err()
+    let profile = runtime.profile();
+    let common_invalid = runtime.validate().is_err()
         || runtime.state(SENDER_TASK_ID) != Ok(TaskState::Dead)
         || runtime.state(RECEIVER_TASK_ID) != Ok(TaskState::Dead)
         || runtime.generation(SENDER_TASK_ID) != Ok(0)
@@ -1317,11 +1634,37 @@ fn scheduler_success() -> ! {
         || endpoint.payload != 0
         || !unsafe { &*TASK_OWNERS.0.get() }.is_empty()
         || unsafe { *CURRENT_TASK.0.get() } != 0
-        || unsafe { (*ACTIVE_CONTEXT.0.get()).present }
-    {
+        || unsafe { (*ACTIVE_CONTEXT.0.get()).present };
+    let profile_invalid = match profile {
+        RuntimeProfile::Cooperative => {
+            runtime.manifest_publication().published
+                || runtime.approval_broker().state != ApprovalBrokerState::Dead
+                || runtime.synthetic_effect().object_generation != 0
+        }
+        RuntimeProfile::Supervised => {
+            let manifest = runtime.manifest_publication();
+            let broker = runtime.approval_broker();
+            let effect = runtime.synthetic_effect();
+            manifest.published
+                || manifest.manifest_id != 0
+                || broker.state != ApprovalBrokerState::Dead
+                || broker.object_generation != 0
+                || broker.request_present
+                || effect.object_generation != 0
+                || effect.occupied
+                || effect.value != 0
+        }
+    };
+    if common_invalid || profile_invalid {
         crate::kernel_failure("scheduler residual state")
     }
-    crate::capability_success()
+    unsafe {
+        *TASK_RUNTIME.0.get() = None;
+    }
+    match profile {
+        RuntimeProfile::Cooperative => crate::capability_success(),
+        RuntimeProfile::Supervised => crate::approval_success(),
+    }
 }
 
 #[unsafe(naked)]
@@ -1562,6 +1905,14 @@ fn probe_bytes(generation: u64) -> Result<&'static [u8], IsolationError> {
         RECEIVER_GENERATION => (
             linker_address(ptr::addr_of!(makopa_receiver_probe)),
             linker_address(ptr::addr_of!(makopa_receiver_probe_end)),
+        ),
+        SUPERVISOR_GENERATION => (
+            linker_address(ptr::addr_of!(makopa_supervisor_probe)),
+            linker_address(ptr::addr_of!(makopa_supervisor_probe_end)),
+        ),
+        WORKLOAD_GENERATION => (
+            linker_address(ptr::addr_of!(makopa_workload_probe)),
+            linker_address(ptr::addr_of!(makopa_workload_probe_end)),
         ),
         _ => return Err(IsolationError::InvalidMapping),
     };
