@@ -32,10 +32,13 @@ a capability-oriented runtime with a small, auditable trusted core.
 - preserves that cooperative profile while separately launching a fixed staged
   workload from one immutable default-deny manifest, mediating its declared
   request through a bounded approval broker, and consuming one exact approval
-  to commit one synthetic in-memory effect; and
+  to commit one synthetic in-memory effect;
+- preserves both earlier profiles while separately recording accepted request,
+  decision, expiry, completion, and failure transitions in a fixed 16-record
+  journal readable only through the supervisor's typed capability; and
 - emits deterministic version, handoff, frame-reuse, fault-containment, and
-  cooperative-IPC, capability-attenuation, and approval-boundary records over
-  the serial console before exiting QEMU.
+  cooperative-IPC, capability-attenuation, approval-boundary, and effect-journal
+  records over the serial console before exiting QEMU.
 
 ## Build and verify
 

@@ -444,8 +444,9 @@ ownership, redaction, capacity, and teardown decision.
   compromise.
 - The fixed broker has capacity one, can block progress indefinitely, and is
   intentionally unsuitable for concurrent or general workloads.
-- No effect history survives teardown. OS032 remains required before MakopaOS
-  can claim structured effect attribution.
+- No effect history survives teardown in the OS031 profile. The separate OS032
+  `JournaledRuntime` profile supplies bounded structured effect attribution
+  without changing this runtime.
 
 ## Rollback and reconsideration
 

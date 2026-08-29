@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-08-29
 - **Work item:** OS018
+- **Implemented by:** OS032 on 2026-08-30
 - **Baseline:** `0ff26b64f1933e6f67726cf7a44a41b08c7a3964`
 
 ## Context
@@ -29,12 +30,12 @@ already established. A general logging service, durable store, cryptographic
 chain, or pointer-based export would introduce boundaries that do not yet
 exist.
 
-OS018 records the contract only. OS032 is the separately approved future
-implementation boundary.
+OS018 records the contract only. OS032 is the separately approved
+implementation boundary and supplies the executable evidence described below.
 
 ## Decision
 
-OS032 will add a separate `JournaledRuntime` profile:
+OS032 adds a separate `JournaledRuntime` profile:
 
 ```text
 JournaledRuntime
@@ -43,7 +44,7 @@ JournaledRuntime
 ```
 
 `Runtime`, `Runtime::new`, and `Runtime::new_supervised` remain byte-for-byte
-and behaviorally unchanged. `JournaledRuntime::new_supervised` will construct
+and behaviorally unchanged. `JournaledRuntime::new_supervised` constructs
 the existing supervised runtime plus one fixed effect journal and one
 supervisor-only read capability. All OS020 through OS031 host, disassembly, and
 QEMU evidence must continue to pass against the unchanged base profiles.
@@ -54,7 +55,7 @@ an external audit protocol, durable storage, or proof of non-repudiation.
 
 ### Fixed journal ownership and footprint
 
-`EffectJournalV1` has a projected exact size of 2,072 bytes:
+`EffectJournalV1` has an exact size of 2,072 bytes:
 
 | Field | Type | Bytes |
 | --- | --- | ---: |
@@ -67,11 +68,9 @@ an external audit protocol, durable storage, or proof of non-repudiation.
 | records | `[EffectRecordV1; 16]` | 2,048 |
 
 The state area is 24 bytes and the record array is 2,048 bytes. Combined with
-the existing 3,112-byte `Runtime`, `JournaledRuntime` therefore has a projected
-exact size of 5,184 bytes. OS032 must enforce both exact sizes with compile-time
-assertions and retain the existing 64 KiB runtime bound. These are contract
-sizes for the future implementation, not claims about code delivered by
-OS018.
+the existing 3,112-byte `Runtime`, `JournaledRuntime` therefore has an exact
+size of 5,184 bytes. OS032 enforces both exact sizes with compile-time
+assertions and retains the existing 64 KiB runtime bound.
 
 The journal has exactly 16 record slots. It never allocates, overwrites,
 rotates, clears, or acknowledges individual records. Sequence or capacity
@@ -168,9 +167,10 @@ above.
 ### Complete-lifecycle reservation
 
 An accepted lifecycle must never be left without capacity for its terminal
-record. Submit therefore requires three free records and enough non-wrapping
-sequence space before it can mutate broker, task, queue, effect, or journal
-state.
+record. Submit therefore requires three free records, enough non-wrapping
+record-sequence space, and enough non-wrapping decision-epoch space for the
+request, decision, and terminal transitions before it can mutate broker, task,
+queue, effect, or journal state.
 
 1. Accepted submit appends `Requested` and reserves two remaining records.
 2. Accepted approval consumes one reservation for `Approved` and retains one
@@ -201,7 +201,7 @@ the effect value unchanged. This refined terminal behavior does not alter
 
 ### Read-only journal capability
 
-OS032 will extend the fixed capability tags with `EffectJournal = 5` and add
+OS032 extends the fixed capability tags with `EffectJournal = 5` and adds
 `READ_EFFECT_JOURNAL = 1 << 7`. Only the trusted supervisor receives that exact
 right. In the journaled reference profile it is the supervisor's fourth handle,
 expected to encode as `0x13`; the workload receives no journal handle or route.
@@ -263,8 +263,8 @@ external export guarantee.
 
 ### Deterministic OS032 reference scenario
 
-The future pinned QEMU `qemu64` one-vCPU scenario must preserve every earlier
-terminal record and then generate exactly 11 journal records in this order:
+The pinned QEMU `qemu64` one-vCPU scenario preserves every earlier terminal
+record and then generates exactly 11 journal records in this order:
 
 1. request, then deny: two records;
 2. request, approve, then expire: three records;
@@ -278,19 +278,19 @@ capability, and reserved-zero fields. The expected table is 1,408 bytes
 (`11 * 128`) and may remain inline in the supervisor's read-only text page.
 No pointer crosses into the kernel.
 
-The current linked supervisor and workload probes measure 556 and 116 bytes,
-respectively, within the existing 4,096-byte user text-page limit. OS032 must
-re-measure the resulting probes and assert that the expected table, compact
-read loop, and code remain within their linked bounds. Only after all task,
-approval, effect, capability, address-space, frame, reservation, and journal
-checks pass may the reference image emit:
+The unchanged OS031 supervisor and workload probes measure 556 and 116 bytes.
+The separate OS032 supervisor and workload probes measure 1,848 and 150 bytes;
+the supervisor size includes the 1,408-byte expected table. The verifier
+asserts all four exact sizes within the existing 4,096-byte user text-page
+limit. Only after all task, approval, effect, capability, address-space, frame,
+reservation, and journal checks pass may the reference image emit:
 
 ```text
 MakopaOS effects v1 ok ordered-redacted
 ```
 
-These sizes establish feasibility for the accepted contract; OS018 does not
-add the table, loop, probe code, or terminal record.
+OS018 did not add the table, loop, probe code, or terminal record; OS032 provides
+that executable evidence.
 
 ## Verification contract for OS032
 
@@ -333,10 +333,11 @@ disassembly, legacy-image, and QEMU evidence remain in the existing single
 read-only CI job. OS032 may add evidence to that job but cannot change its
 topology, permissions, or dependency policy without separate approval.
 
-OS032 must not claim durable audit, crash recovery, tamper resistance,
-cryptographic non-repudiation, authenticated principal identity, human
-approval, wall-clock ordering, external export, external schema conformance,
-real effects, general workload support, or availability under exhaustion.
+The implementation does not claim durable audit, crash recovery, tamper
+resistance, cryptographic non-repudiation, authenticated principal identity,
+human approval, wall-clock ordering, external export, external schema
+conformance, real effects, general workload support, or availability under
+exhaustion.
 
 ## Alternatives considered
 
@@ -407,12 +408,11 @@ existing decision epoch state exactly what the runtime can prove.
   availability guarantee.
 - The fixed schema can be mapped by a future user-space exporter without
   binding the kernel ABI to OpenTelemetry, CloudEvents, or another protocol.
-- OS032 remains required before MakopaOS can claim executable structured-effect
-  evidence.
+- OS032 provides executable structured-effect evidence for this fixed profile.
 
 ## Rollback and reconsideration
 
-Replace this decision before OS032 if the wrapper cannot preserve exact base
+Replace this decision if a future change cannot preserve exact base
 `Runtime` layout and behavior, if complete-lifecycle reservation cannot be
 atomic with broker transitions, if the three-register reads cannot be proven
 pointer-free, or if the journal cannot remain readable through final task

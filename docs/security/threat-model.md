@@ -40,8 +40,8 @@ the fixed OS031 reference boundary:
   resource, inline argument, rights, generations, sequence, and decision epoch
   match the approved request.
 
-The planned OS032 journaled profile must additionally protect these properties
-before its evidence claim can close:
+The OS032 journaled profile additionally protects these properties within its
+fixed reference boundary:
 
 - an accepted approval or effect lifecycle either reserves room for its
   terminal record or is rejected without runtime mutation;
@@ -144,7 +144,7 @@ before its evidence claim can close:
 - rollback and teardown that remove broker, approval, and effect references
   before capability entries, task and address-space references, mappings, and
   owned frames;
-- for OS032, a separate fixed journal wrapper that leaves existing runtime
+- a separate fixed journal wrapper that leaves existing runtime
   profiles unchanged, reserves complete lifecycle capacity before submit,
   appends immutable redacted records atomically with accepted transitions,
   distinguishes resolved supervisor authority from zero-right kernel teardown,
@@ -199,15 +199,14 @@ containment claim. OS031 also does not cover dynamic objects, cross-task
 transfer, recursive revocation, general policy evaluation, real device,
 network, storage, or credential effects, durable effect logging, wall-clock
 deadlines, preemptive availability, external authorization protocols, or
-arbitrary workloads. OS032 remains the separate decision and implementation
-boundary for ordered, bounded, redacted effect records.
+arbitrary workloads. OS032 separately implements ordered, bounded, redacted
+records for the same synthetic boundary without broadening those claims.
 
-## OS032 planned evidence boundary
+## OS032 residual boundary
 
-ADR-0007 selects a separate `JournaledRuntime` wrapper for the future OS032
-proof. It does not change the implemented OS031 `Runtime` or claim that effect
-records exist today. The planned journal has 16 immutable boot-local records,
-reserves three slots before accepting a request, exposes only resolved
+ADR-0007's separate `JournaledRuntime` wrapper leaves the OS031 `Runtime` and
+its constructors unchanged. The implemented journal has 16 immutable boot-local
+records, reserves three slots before accepting a request, exposes only resolved
 principal, task, action, capability, epoch, and categorical outcome fields, and
 admits read access only through the trusted supervisor's typed capability.
 

@@ -18,14 +18,20 @@ use makopa_address_space::{
 };
 use makopa_frame_allocator::FrameAllocator;
 use makopa_task_runtime::{
-    ApprovalBrokerState, CONTEXT_CS_OFFSET, CONTEXT_R8_OFFSET, CONTEXT_R9_OFFSET,
+    APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE, ApprovalBrokerSnapshot, ApprovalBrokerState,
+    CAPABILITY_RIGHT_COMMIT_EFFECT, CAPABILITY_RIGHT_DECIDE_APPROVAL,
+    CAPABILITY_RIGHT_SUBMIT_APPROVAL, CONTEXT_CS_OFFSET, CONTEXT_R8_OFFSET, CONTEXT_R9_OFFSET,
     CONTEXT_R10_OFFSET, CONTEXT_R11_OFFSET, CONTEXT_R12_OFFSET, CONTEXT_R13_OFFSET,
     CONTEXT_R14_OFFSET, CONTEXT_R15_OFFSET, CONTEXT_RAX_OFFSET, CONTEXT_RBP_OFFSET,
     CONTEXT_RBX_OFFSET, CONTEXT_RCX_OFFSET, CONTEXT_RDI_OFFSET, CONTEXT_RDX_OFFSET,
     CONTEXT_RFLAGS_OFFSET, CONTEXT_RIP_OFFSET, CONTEXT_ROOT_OFFSET, CONTEXT_RSI_OFFSET,
-    CONTEXT_RSP_OFFSET, CONTEXT_SS_OFFSET, CapabilityTableState, ContextPolicy,
-    DPL3_INTERRUPT_GATE_ATTRIBUTES, RECEIVER_TASK_ID, Runtime, RuntimeProfile, SENDER_TASK_ID,
-    SUPERVISOR_GENERATION, TaskContextV1, TaskState, TrapFrameV1, TrapOutcome, WORKLOAD_GENERATION,
+    CONTEXT_RSP_OFFSET, CONTEXT_SS_OFFSET, CapabilityTableSnapshot, CapabilityTableState,
+    ContextPolicy, DPL3_INTERRUPT_GATE_ATTRIBUTES, EFFECT_JOURNAL_OBJECT_GENERATION,
+    EFFECT_RECORD_BYTE_SIZE, EFFECT_RECORD_SCHEMA_VERSION, EffectEventKind, EffectJournalState,
+    EffectRecordV1, EndpointSnapshot, JournaledRuntime, ManifestPublicationSnapshot,
+    OBJECT_TYPE_APPROVAL_BROKER, OBJECT_TYPE_TEST_EFFECT, PRINCIPAL_ID, RECEIVER_TASK_ID, Runtime,
+    RuntimeError, RuntimeProfile, SENDER_TASK_ID, SUPERVISOR_GENERATION, SyntheticEffectSnapshot,
+    TaskContextV1, TaskState, TrapFrameV1, TrapOutcome, TrapStatus, WORKLOAD_GENERATION,
     version_one_cr4_allowed,
 };
 use x86_64::{VirtAddr, instructions::tlb};
@@ -464,6 +470,232 @@ makopa_workload_probe:
     .size makopa_workload_probe, .-makopa_workload_probe
     .global makopa_workload_probe_end
 makopa_workload_probe_end:
+
+    .balign 16
+    .global makopa_journal_supervisor_probe
+    .type makopa_journal_supervisor_probe,@function
+makopa_journal_supervisor_probe:
+    mov eax, 6
+    mov edi, 0x10
+    mov esi, 1
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Ljournal_supervisor_failure
+
+    mov eax, 0
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+
+    mov r15d, 1
+    mov ebx, 0x41
+.Ljournal_lifecycle_loop:
+    mov eax, 8
+    mov edi, 0x11
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Ljournal_supervisor_failure
+    cmp rdi, r15
+    jne .Ljournal_supervisor_failure
+    cmp rsi, 1
+    jne .Ljournal_supervisor_failure
+    cmp rdx, rbx
+    jne .Ljournal_supervisor_failure
+    mov rbp, rdi
+
+    mov eax, 9
+    mov edi, 0x11
+    mov rsi, rbp
+    cmp r15, 1
+    je .Ljournal_decide_deny
+    mov edx, 1
+    int 0x80
+    cmp rax, 0
+    jne .Ljournal_supervisor_failure
+    cmp r15, 2
+    je .Ljournal_decide_expire
+
+    mov eax, 10
+    mov edi, 0x12
+    mov rsi, rbp
+    mov rdx, rbx
+    int 0x80
+    cmp r15, 3
+    je .Ljournal_expect_complete
+    cmp rax, 18
+    jne .Ljournal_supervisor_failure
+    jmp .Ljournal_lifecycle_done
+.Ljournal_expect_complete:
+    cmp rax, 0
+    jne .Ljournal_supervisor_failure
+    jmp .Ljournal_lifecycle_done
+.Ljournal_decide_expire:
+    mov eax, 9
+    mov edi, 0x11
+    mov rsi, rbp
+    mov edx, 2
+    int 0x80
+    cmp rax, 0
+    jne .Ljournal_supervisor_failure
+    jmp .Ljournal_lifecycle_done
+.Ljournal_decide_deny:
+    mov eax, 9
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Ljournal_supervisor_failure
+.Ljournal_lifecycle_done:
+    mov eax, 0
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    inc r15
+    inc rbx
+    cmp r15, 5
+    jne .Ljournal_lifecycle_loop
+
+    mov eax, 11
+    mov edi, 0x13
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+    cmp rax, 0
+    jne .Ljournal_supervisor_failure
+    cmp rdi, 1
+    jne .Ljournal_supervisor_failure
+    cmp rsi, 12
+    jne .Ljournal_supervisor_failure
+    cmp rdx, 11
+    jne .Ljournal_supervisor_failure
+
+    lea r12, [rip + .Ljournal_expected_records]
+    mov r13d, 1
+.Ljournal_record_loop:
+    xor r14d, r14d
+.Ljournal_triplet_loop:
+    mov eax, 12
+    mov edi, 0x13
+    mov rsi, r13
+    mov rdx, r14
+    int 0x80
+    cmp rax, 0
+    jne .Ljournal_supervisor_failure
+    cmp rdi, qword ptr [r12]
+    jne .Ljournal_supervisor_failure
+    cmp r14, 5
+    je .Ljournal_final_triplet
+    cmp rsi, qword ptr [r12 + 8]
+    jne .Ljournal_supervisor_failure
+    cmp rdx, qword ptr [r12 + 16]
+    jne .Ljournal_supervisor_failure
+    add r12, 24
+    inc r14
+    jmp .Ljournal_triplet_loop
+.Ljournal_final_triplet:
+    cmp rsi, 0
+    jne .Ljournal_supervisor_failure
+    cmp rdx, 0
+    jne .Ljournal_supervisor_failure
+    add r12, 8
+    inc r13
+    cmp r13, 12
+    jne .Ljournal_record_loop
+
+    mov eax, 3
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+.Ljournal_supervisor_failure:
+    hlt
+
+    .balign 8
+.Ljournal_expected_records:
+    .quad 0x0000008000000001, 0x0000000000000001, 1, 2
+    .quad 1, 2, 5, 2, 5, 1, 1, 3, 1, 1, 16, 0
+    .quad 0x0000008000000001, 0x0000001000000003, 2, 3
+    .quad 1, 1, 4, 2, 5, 1, 1, 3, 1, 1, 32, 0
+    .quad 0x0000008000000001, 0x0000000000000001, 3, 4
+    .quad 1, 2, 5, 2, 5, 2, 1, 3, 1, 1, 16, 0
+    .quad 0x0000008000000001, 0x0000000000000002, 4, 5
+    .quad 1, 1, 4, 2, 5, 2, 1, 3, 1, 1, 32, 0
+    .quad 0x0000008000000001, 0x0000001100000004, 5, 6
+    .quad 1, 1, 4, 2, 5, 2, 1, 3, 1, 1, 32, 0
+    .quad 0x0000008000000001, 0x0000000000000001, 6, 7
+    .quad 1, 2, 5, 2, 5, 3, 1, 3, 1, 1, 16, 0
+    .quad 0x0000008000000001, 0x0000000000000002, 7, 8
+    .quad 1, 1, 4, 2, 5, 3, 1, 3, 1, 1, 32, 0
+    .quad 0x0000008000000001, 0x0000000000000005, 8, 9
+    .quad 1, 1, 4, 2, 5, 3, 1, 4, 1, 1, 64, 0
+    .quad 0x0000008000000001, 0x0000000000000001, 9, 10
+    .quad 1, 2, 5, 2, 5, 4, 1, 3, 1, 1, 16, 0
+    .quad 0x0000008000000001, 0x0000000000000002, 10, 11
+    .quad 1, 1, 4, 2, 5, 4, 1, 3, 1, 1, 32, 0
+    .quad 0x0000008000000001, 0x0000001200000006, 11, 12
+    .quad 1, 1, 4, 2, 5, 4, 1, 4, 1, 1, 64, 0
+    .size makopa_journal_supervisor_probe, .-makopa_journal_supervisor_probe
+    .global makopa_journal_supervisor_probe_end
+makopa_journal_supervisor_probe_end:
+
+    .balign 16
+    .global makopa_journal_workload_probe
+    .type makopa_journal_workload_probe,@function
+makopa_journal_workload_probe:
+    mov eax, 7
+    mov edi, 0x10
+    mov esi, 1
+    mov edx, 0x41
+    int 0x80
+    cmp rax, 16
+    jne .Ljournal_workload_failure
+    cmp rdx, 0
+    jne .Ljournal_workload_failure
+
+    mov eax, 7
+    mov edi, 0x10
+    mov esi, 1
+    mov edx, 0x42
+    int 0x80
+    cmp rax, 17
+    jne .Ljournal_workload_failure
+    cmp rdx, 0
+    jne .Ljournal_workload_failure
+
+    mov eax, 7
+    mov edi, 0x10
+    mov esi, 1
+    mov edx, 0x43
+    int 0x80
+    cmp rax, 0
+    jne .Ljournal_workload_failure
+    cmp rdx, 0x43
+    jne .Ljournal_workload_failure
+
+    mov eax, 7
+    mov edi, 0x10
+    mov esi, 1
+    mov edx, 0x44
+    int 0x80
+    cmp rax, 18
+    jne .Ljournal_workload_failure
+    cmp rdx, 0
+    jne .Ljournal_workload_failure
+
+    mov eax, 3
+    xor edi, edi
+    xor esi, esi
+    xor edx, edx
+    int 0x80
+.Ljournal_workload_failure:
+    hlt
+    .size makopa_journal_workload_probe, .-makopa_journal_workload_probe
+    .global makopa_journal_workload_probe_end
+makopa_journal_workload_probe_end:
     nop
     .previous
 "#
@@ -690,8 +922,143 @@ impl TaskOwners {
 #[unsafe(link_section = ".data.task_owners")]
 static TASK_OWNERS: StaticCell<TaskOwners> = StaticCell::new(TaskOwners::new());
 
+enum KernelRuntime {
+    Base(Runtime),
+    Journaled(JournaledRuntime),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum KernelRuntimeKind {
+    Cooperative,
+    Supervised,
+    Journaled,
+}
+
+impl KernelRuntime {
+    fn kind(&self) -> KernelRuntimeKind {
+        match self {
+            Self::Base(runtime) => match runtime.profile() {
+                RuntimeProfile::Cooperative => KernelRuntimeKind::Cooperative,
+                RuntimeProfile::Supervised => KernelRuntimeKind::Supervised,
+            },
+            Self::Journaled(_) => KernelRuntimeKind::Journaled,
+        }
+    }
+
+    fn state(&self, task: u64) -> Result<TaskState, RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.state(task),
+            Self::Journaled(runtime) => runtime.state(task),
+        }
+    }
+
+    fn generation(&self, task: u64) -> Result<u64, RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.generation(task),
+            Self::Journaled(runtime) => runtime.generation(task),
+        }
+    }
+
+    fn context(&self, task: u64) -> Result<&TaskContextV1, RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.context(task),
+            Self::Journaled(runtime) => runtime.context(task),
+        }
+    }
+
+    fn queue(&self) -> ([u64; 2], usize) {
+        match self {
+            Self::Base(runtime) => runtime.queue(),
+            Self::Journaled(runtime) => runtime.queue(),
+        }
+    }
+
+    fn endpoint(&self) -> EndpointSnapshot {
+        match self {
+            Self::Base(runtime) => runtime.endpoint(),
+            Self::Journaled(runtime) => runtime.endpoint(),
+        }
+    }
+
+    fn manifest_publication(&self) -> ManifestPublicationSnapshot {
+        match self {
+            Self::Base(runtime) => runtime.manifest_publication(),
+            Self::Journaled(runtime) => runtime.manifest_publication(),
+        }
+    }
+
+    fn approval_broker(&self) -> ApprovalBrokerSnapshot {
+        match self {
+            Self::Base(runtime) => runtime.approval_broker(),
+            Self::Journaled(runtime) => runtime.approval_broker(),
+        }
+    }
+
+    fn synthetic_effect(&self) -> SyntheticEffectSnapshot {
+        match self {
+            Self::Base(runtime) => runtime.synthetic_effect(),
+            Self::Journaled(runtime) => runtime.synthetic_effect(),
+        }
+    }
+
+    fn capability_table(&self, task: u64) -> Result<CapabilityTableSnapshot, RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.capability_table(task),
+            Self::Journaled(runtime) => runtime.capability_table(task),
+        }
+    }
+
+    fn running_task(&self) -> Result<u64, RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.running_task(),
+            Self::Journaled(runtime) => runtime.running_task(),
+        }
+    }
+
+    fn capture_trap(
+        &mut self,
+        task: u64,
+        frame: TrapFrameV1,
+        root: u64,
+        generation: u64,
+    ) -> Result<(), RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.capture_trap(task, frame, root, generation),
+            Self::Journaled(runtime) => runtime.capture_trap(task, frame, root, generation),
+        }
+    }
+
+    fn handle_trap(&mut self, task: u64) -> Result<TrapOutcome, RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.handle_trap(task),
+            Self::Journaled(runtime) => runtime.handle_trap(task),
+        }
+    }
+
+    fn begin_teardown(&mut self, task: u64) -> Result<(), RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.begin_teardown(task),
+            Self::Journaled(runtime) => runtime.begin_teardown(task),
+        }
+    }
+
+    fn complete_teardown(&mut self, task: u64) -> Result<Option<u64>, RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.complete_teardown(task),
+            Self::Journaled(runtime) => runtime.complete_teardown(task),
+        }
+    }
+
+    fn validate(&self) -> Result<(), RuntimeError> {
+        match self {
+            Self::Base(runtime) => runtime.validate(),
+            Self::Journaled(runtime) => runtime.validate(),
+        }
+    }
+}
+
 #[unsafe(link_section = ".data.task_runtime")]
-static TASK_RUNTIME: StaticCell<Option<Runtime>> = StaticCell::new(None);
+static TASK_RUNTIME: StaticCell<Option<KernelRuntime>> = StaticCell::new(None);
 
 #[unsafe(link_section = ".bss.current_task")]
 static CURRENT_TASK: StaticCell<u64> = StaticCell::new(0);
@@ -766,6 +1133,10 @@ unsafe extern "C" {
     static makopa_supervisor_probe_end: u8;
     static makopa_workload_probe: u8;
     static makopa_workload_probe_end: u8;
+    static makopa_journal_supervisor_probe: u8;
+    static makopa_journal_supervisor_probe_end: u8;
+    static makopa_journal_workload_probe: u8;
+    static makopa_journal_workload_probe_end: u8;
 }
 
 struct BootstrapBuilder {
@@ -1173,7 +1544,10 @@ extern "sysv64" fn isolation_entry() -> ! {
     }
 
     let allocator = unsafe { crate::frame_allocator() };
-    let mut backend = KernelBackend { allocator };
+    let mut backend = KernelBackend {
+        allocator,
+        journaled_probes: false,
+    };
     let mut owner = match construct_address_space(TASK_GENERATION, &mut backend) {
         Ok(owner) => owner,
         Err(_) => crate::kernel_failure("address-space construction"),
@@ -1213,7 +1587,10 @@ extern "sysv64" fn isolation_continuation() -> ! {
         crate::kernel_failure("task recovery state")
     }
     let allocator = unsafe { crate::frame_allocator() };
-    let mut backend = KernelBackend { allocator };
+    let mut backend = KernelBackend {
+        allocator,
+        journaled_probes: false,
+    };
     let dead = match teardown_checked(owner, &mut backend) {
         Ok(owner) => owner,
         Err(_) => crate::kernel_failure("address-space teardown"),
@@ -1251,7 +1628,10 @@ pub unsafe fn run_scheduler() -> ! {
     }
 
     let allocator = unsafe { crate::frame_allocator() };
-    let mut backend = KernelBackend { allocator };
+    let mut backend = KernelBackend {
+        allocator,
+        journaled_probes: false,
+    };
     let pair =
         match construct_address_space_pair(SENDER_GENERATION, RECEIVER_GENERATION, &mut backend) {
             Ok(pair) => pair,
@@ -1333,7 +1713,7 @@ pub unsafe fn run_scheduler() -> ! {
             sender: Some(pair.first),
             receiver: Some(pair.second),
         };
-        *TASK_RUNTIME.0.get() = runtime;
+        *TASK_RUNTIME.0.get() = runtime.map(KernelRuntime::Base);
     }
     resume_scheduled_task(next)
 }
@@ -1351,7 +1731,10 @@ pub unsafe fn run_supervised_scheduler() -> ! {
     }
 
     let allocator = unsafe { crate::frame_allocator() };
-    let mut backend = KernelBackend { allocator };
+    let mut backend = KernelBackend {
+        allocator,
+        journaled_probes: false,
+    };
     let pair = match construct_address_space_pair(
         SUPERVISOR_GENERATION,
         WORKLOAD_GENERATION,
@@ -1437,7 +1820,114 @@ pub unsafe fn run_supervised_scheduler() -> ! {
             sender: Some(pair.first),
             receiver: Some(pair.second),
         };
-        *TASK_RUNTIME.0.get() = runtime;
+        *TASK_RUNTIME.0.get() = runtime.map(KernelRuntime::Base);
+    }
+    resume_scheduled_task(next)
+}
+
+pub unsafe fn run_journaled_scheduler() -> ! {
+    let recovery = unsafe { *RECOVERY_STATE.0.get() };
+    if !recovery.ready || read_cr3() != recovery.root {
+        crate::kernel_failure("journaled recovery root")
+    }
+    if unsafe { (&*TASK_OWNER.0.get()).is_some() }
+        || unsafe { (&*TASK_RUNTIME.0.get()).is_some() }
+        || !unsafe { &*TASK_OWNERS.0.get() }.is_empty()
+    {
+        crate::kernel_failure("journaled publication state")
+    }
+
+    let allocator = unsafe { crate::frame_allocator() };
+    let mut backend = KernelBackend {
+        allocator,
+        journaled_probes: true,
+    };
+    let pair = match construct_address_space_pair(
+        SUPERVISOR_GENERATION,
+        WORKLOAD_GENERATION,
+        &mut backend,
+    ) {
+        Ok(pair) => pair,
+        Err(PairBuildFailure::First(failure))
+            if failure.rollback_error.is_none() && failure.retained.is_empty() =>
+        {
+            crate::kernel_failure("journaled first address space")
+        }
+        Err(PairBuildFailure::Second {
+            second,
+            first_teardown,
+        }) if second.rollback_error.is_none()
+            && second.retained.is_empty()
+            && first_teardown.is_none() =>
+        {
+            crate::kernel_failure("journaled second address space")
+        }
+        Err(_) => crate::kernel_failure("journaled construction rollback"),
+    };
+
+    let supervisor_root = pair
+        .first
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("journaled supervisor root missing"));
+    let workload_root = pair
+        .second
+        .root()
+        .unwrap_or_else(|| crate::kernel_failure("journaled workload root missing"));
+    let supervisor_context = TaskContextV1::initial(
+        SENDER_TASK_ID,
+        SUPERVISOR_GENERATION,
+        supervisor_root,
+        USER_TEXT,
+        USER_STACK_TOP,
+        u64::from(USER_CODE_SELECTOR),
+        u64::from(USER_DATA_SELECTOR),
+    );
+    let workload_context = TaskContextV1::initial(
+        RECEIVER_TASK_ID,
+        WORKLOAD_GENERATION,
+        workload_root,
+        USER_TEXT,
+        USER_STACK_TOP,
+        u64::from(USER_CODE_SELECTOR),
+        u64::from(USER_DATA_SELECTOR),
+    );
+    let contexts_valid = supervisor_context
+        .validate(
+            SENDER_TASK_ID,
+            SUPERVISOR_GENERATION,
+            supervisor_root,
+            task_context_policy(),
+        )
+        .is_ok()
+        && workload_context
+            .validate(
+                RECEIVER_TASK_ID,
+                WORKLOAD_GENERATION,
+                workload_root,
+                task_context_policy(),
+            )
+            .is_ok();
+    let mut runtime = JournaledRuntime::new_supervised(supervisor_context, workload_context).ok();
+    if !contexts_valid || runtime.is_none() {
+        let second_ok = teardown_checked(pair.second, &mut backend).is_ok();
+        let first_ok = teardown_checked(pair.first, &mut backend).is_ok();
+        if !second_ok || !first_ok {
+            crate::kernel_failure("journaled publication rollback")
+        }
+        crate::kernel_failure("journaled initial context")
+    }
+    let next = runtime
+        .as_mut()
+        .and_then(|runtime| runtime.dispatch_next().ok().flatten())
+        .filter(|task| *task == SENDER_TASK_ID)
+        .unwrap_or_else(|| crate::kernel_failure("journaled initial dispatch"));
+
+    unsafe {
+        *TASK_OWNERS.0.get() = TaskOwners {
+            sender: Some(pair.first),
+            receiver: Some(pair.second),
+        };
+        *TASK_RUNTIME.0.get() = runtime.map(KernelRuntime::Journaled);
     }
     resume_scheduled_task(next)
 }
@@ -1586,7 +2076,10 @@ fn teardown_exited_task(task: u64) -> ! {
         crate::kernel_failure("exited owner active")
     }
     let allocator = unsafe { crate::frame_allocator() };
-    let mut backend = KernelBackend { allocator };
+    let mut backend = KernelBackend {
+        allocator,
+        journaled_probes: false,
+    };
     let dead = match teardown_checked(owner, &mut backend) {
         Ok(owner) => owner,
         Err(_) => crate::kernel_failure("exited owner teardown"),
@@ -1604,12 +2097,12 @@ fn teardown_exited_task(task: u64) -> ! {
 }
 
 fn scheduler_success() -> ! {
-    let runtime = unsafe { &*TASK_RUNTIME.0.get() }
-        .as_ref()
+    let runtime = unsafe { &mut *TASK_RUNTIME.0.get() }
+        .as_mut()
         .unwrap_or_else(|| crate::kernel_failure("final runtime missing"));
     let (queue, queue_len) = runtime.queue();
     let endpoint = runtime.endpoint();
-    let profile = runtime.profile();
+    let profile = runtime.kind();
     let common_invalid = runtime.validate().is_err()
         || runtime.state(SENDER_TASK_ID) != Ok(TaskState::Dead)
         || runtime.state(RECEIVER_TASK_ID) != Ok(TaskState::Dead)
@@ -1635,13 +2128,13 @@ fn scheduler_success() -> ! {
         || !unsafe { &*TASK_OWNERS.0.get() }.is_empty()
         || unsafe { *CURRENT_TASK.0.get() } != 0
         || unsafe { (*ACTIVE_CONTEXT.0.get()).present };
-    let profile_invalid = match profile {
-        RuntimeProfile::Cooperative => {
+    let profile_invalid = match &*runtime {
+        KernelRuntime::Base(base) if base.profile() == RuntimeProfile::Cooperative => {
             runtime.manifest_publication().published
                 || runtime.approval_broker().state != ApprovalBrokerState::Dead
                 || runtime.synthetic_effect().object_generation != 0
         }
-        RuntimeProfile::Supervised => {
+        KernelRuntime::Base(_) => {
             let manifest = runtime.manifest_publication();
             let broker = runtime.approval_broker();
             let effect = runtime.synthetic_effect();
@@ -1654,17 +2147,198 @@ fn scheduler_success() -> ! {
                 || effect.occupied
                 || effect.value != 0
         }
+        KernelRuntime::Journaled(journaled) => {
+            let manifest = runtime.manifest_publication();
+            let broker = runtime.approval_broker();
+            let effect = runtime.synthetic_effect();
+            let journal = journaled.effect_journal();
+            manifest.published
+                || manifest.manifest_id != 0
+                || broker.state != ApprovalBrokerState::Dead
+                || broker.object_generation != 0
+                || broker.request_present
+                || effect.object_generation != 0
+                || effect.occupied
+                || effect.value != 0
+                || journal.state != EffectJournalState::Sealed
+                || journal.object_generation != EFFECT_JOURNAL_OBJECT_GENERATION
+                || journal.committed_record_count != 11
+                || journal.reserved_record_count != 0
+                || journal.next_record_sequence != 12
+                || journal_reference_invalid(journaled)
+        }
     };
     if common_invalid || profile_invalid {
         crate::kernel_failure("scheduler residual state")
+    }
+    if let KernelRuntime::Journaled(journaled) = runtime {
+        if journaled.finish_reclamation().is_err()
+            || journaled.effect_journal().state != EffectJournalState::Dead
+            || journaled.validate().is_err()
+        {
+            crate::kernel_failure("journal reclamation")
+        }
     }
     unsafe {
         *TASK_RUNTIME.0.get() = None;
     }
     match profile {
-        RuntimeProfile::Cooperative => crate::capability_success(),
-        RuntimeProfile::Supervised => crate::approval_success(),
+        KernelRuntimeKind::Cooperative => crate::capability_success(),
+        KernelRuntimeKind::Supervised => crate::approval_success(),
+        KernelRuntimeKind::Journaled => crate::effect_journal_success(),
     }
+}
+
+fn journal_reference_invalid(runtime: &JournaledRuntime) -> bool {
+    const EXPECTED: [(EffectEventKind, TrapStatus, u64, u64, u64, u64, u32, u64); 11] = [
+        (
+            EffectEventKind::Requested,
+            TrapStatus::Ok,
+            2,
+            2,
+            5,
+            1,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+        ),
+        (
+            EffectEventKind::Denied,
+            TrapStatus::ApprovalDenied,
+            3,
+            1,
+            4,
+            1,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_DECIDE_APPROVAL,
+        ),
+        (
+            EffectEventKind::Requested,
+            TrapStatus::Ok,
+            4,
+            2,
+            5,
+            2,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+        ),
+        (
+            EffectEventKind::Approved,
+            TrapStatus::Ok,
+            5,
+            1,
+            4,
+            2,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_DECIDE_APPROVAL,
+        ),
+        (
+            EffectEventKind::Expired,
+            TrapStatus::ApprovalExpired,
+            6,
+            1,
+            4,
+            2,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_DECIDE_APPROVAL,
+        ),
+        (
+            EffectEventKind::Requested,
+            TrapStatus::Ok,
+            7,
+            2,
+            5,
+            3,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+        ),
+        (
+            EffectEventKind::Approved,
+            TrapStatus::Ok,
+            8,
+            1,
+            4,
+            3,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_DECIDE_APPROVAL,
+        ),
+        (
+            EffectEventKind::Completed,
+            TrapStatus::Ok,
+            9,
+            1,
+            4,
+            3,
+            OBJECT_TYPE_TEST_EFFECT,
+            CAPABILITY_RIGHT_COMMIT_EFFECT,
+        ),
+        (
+            EffectEventKind::Requested,
+            TrapStatus::Ok,
+            10,
+            2,
+            5,
+            4,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+        ),
+        (
+            EffectEventKind::Approved,
+            TrapStatus::Ok,
+            11,
+            1,
+            4,
+            4,
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_DECIDE_APPROVAL,
+        ),
+        (
+            EffectEventKind::Failed,
+            TrapStatus::EffectUnavailable,
+            12,
+            1,
+            4,
+            4,
+            OBJECT_TYPE_TEST_EFFECT,
+            CAPABILITY_RIGHT_COMMIT_EFFECT,
+        ),
+    ];
+    for (index, expected) in EXPECTED.iter().enumerate() {
+        let Ok(record) = runtime.effect_record(index as u64 + 1) else {
+            return true;
+        };
+        if effect_record_mismatch(record, index as u64 + 1, *expected) {
+            return true;
+        }
+    }
+    false
+}
+
+fn effect_record_mismatch(
+    record: EffectRecordV1,
+    record_sequence: u64,
+    expected: (EffectEventKind, TrapStatus, u64, u64, u64, u64, u32, u64),
+) -> bool {
+    let (kind, status, epoch, actor, actor_generation, request_sequence, object_type, rights) =
+        expected;
+    record.schema_version != EFFECT_RECORD_SCHEMA_VERSION
+        || record.byte_size != EFFECT_RECORD_BYTE_SIZE
+        || record.event_kind != kind as u32
+        || record.status != status as u32
+        || record.record_sequence != record_sequence
+        || record.decision_epoch != epoch
+        || record.principal_id != PRINCIPAL_ID
+        || record.actor_task_id != actor
+        || record.actor_task_generation != actor_generation
+        || record.subject_task_id != RECEIVER_TASK_ID
+        || record.subject_task_generation != WORKLOAD_GENERATION
+        || record.request_sequence != request_sequence
+        || record.action_id != APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE
+        || record.capability_object_type != object_type
+        || record.reserved_zero != 0
+        || record.capability_object_id != 1
+        || record.capability_object_generation != EFFECT_JOURNAL_OBJECT_GENERATION
+        || record.capability_rights != rights
+        || record.trailing_reserved_zero != 0
 }
 
 #[unsafe(naked)]
@@ -1891,9 +2565,10 @@ fn tss_descriptor(base: u64, limit: u32) -> (u64, u64) {
 
 struct KernelBackend<'a> {
     allocator: &'a mut FrameAllocator,
+    journaled_probes: bool,
 }
 
-fn probe_bytes(generation: u64) -> Result<&'static [u8], IsolationError> {
+fn probe_bytes(generation: u64, journaled: bool) -> Result<&'static [u8], IsolationError> {
     if generation == TASK_GENERATION {
         return Ok(&LEGACY_USER_PROBE);
     }
@@ -1906,9 +2581,17 @@ fn probe_bytes(generation: u64) -> Result<&'static [u8], IsolationError> {
             linker_address(ptr::addr_of!(makopa_receiver_probe)),
             linker_address(ptr::addr_of!(makopa_receiver_probe_end)),
         ),
+        SUPERVISOR_GENERATION if journaled => (
+            linker_address(ptr::addr_of!(makopa_journal_supervisor_probe)),
+            linker_address(ptr::addr_of!(makopa_journal_supervisor_probe_end)),
+        ),
         SUPERVISOR_GENERATION => (
             linker_address(ptr::addr_of!(makopa_supervisor_probe)),
             linker_address(ptr::addr_of!(makopa_supervisor_probe_end)),
+        ),
+        WORKLOAD_GENERATION if journaled => (
+            linker_address(ptr::addr_of!(makopa_journal_workload_probe)),
+            linker_address(ptr::addr_of!(makopa_journal_workload_probe_end)),
         ),
         WORKLOAD_GENERATION => (
             linker_address(ptr::addr_of!(makopa_workload_probe)),
@@ -1952,7 +2635,7 @@ impl AddressSpaceBackend for KernelBackend<'_> {
                     task[index] = recovery.entries[index];
                 }
             } else if role == FrameRole::Text {
-                let probe = probe_bytes(generation)?;
+                let probe = probe_bytes(generation, self.journaled_probes)?;
                 bytes[..probe.len()].copy_from_slice(probe);
             }
             Ok(())

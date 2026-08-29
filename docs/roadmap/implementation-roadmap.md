@@ -536,7 +536,7 @@ OS032 implements the accepted contract without changing this decision.
 
 ### OS032 — Structured effect log
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS018
 
@@ -555,6 +555,21 @@ gate preserves all prior transcripts, compares the exact 11-record deny,
 expire, complete, and failed-effect sequence, proves empty final state, and
 emits `MakopaOS effects v1 ok ordered-redacted` through the same single
 read-only CI job.
+
+Delivery: the dependency-free task runtime retains the exact 3,112-byte
+`Runtime` and both existing constructors while adding an exact 5,184-byte
+`JournaledRuntime` wrapper. Its 2,072-byte journal owns 16 immutable 128-byte
+records, admits a request only with three available lifecycle slots, and
+reserves every accepted terminal record. A fourth supervisor handle with
+`READ_EFFECT_JOURNAL` resolves the fixed journal object; operations `11` and
+`12` expose metadata and three record words per trap without a user pointer.
+Host tests cover layouts, every publication rollback step, ordered lifecycle
+transitions, typed failures, capacity and sequence exhaustion, immutable reads,
+kernel teardown attribution, sealing, and reclamation. Separate linked probes
+measure 1,848 and 150 bytes, compare all 11 records, and preserve the complete
+OS020 through OS031 machine-code and serial evidence before the new terminal
+record. The existing single read-only CI job retains the pinned `qemu64`
+one-vCPU machine and dependency audit.
 
 Non-scope: external telemetry schemas or protocols, persistence, crash
 recovery, cryptographic non-repudiation, dynamic objects, cross-task transfer,
