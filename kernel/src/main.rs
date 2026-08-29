@@ -171,6 +171,13 @@ pub(crate) fn approval_success() -> ! {
     let mut serial = SerialPort::new(KERNEL_SERIAL);
     serial.initialize();
     let _ = serial.write_str("MakopaOS approval v1 ok staged-single-use\r\n");
+    unsafe { arch_x86_64::run_journaled_scheduler() }
+}
+
+pub(crate) fn effect_journal_success() -> ! {
+    let mut serial = SerialPort::new(KERNEL_SERIAL);
+    serial.initialize();
+    let _ = serial.write_str("MakopaOS effects v1 ok ordered-redacted\r\n");
     exit_qemu(QEMU_SUCCESS)
 }
 

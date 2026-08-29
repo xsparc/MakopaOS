@@ -21,12 +21,24 @@ PROBES = (
     "makopa_receiver_probe",
     "makopa_supervisor_probe",
     "makopa_workload_probe",
+    "makopa_journal_supervisor_probe",
+    "makopa_journal_workload_probe",
 )
 PROBE_OPERATIONS = {
     "makopa_sender_probe": (4, 5, 1, 1, 5, 3),
     "makopa_receiver_probe": (2, 5, 3),
     "makopa_supervisor_probe": (6, 6, 0, 8, 9, 0, 8, 9, 9, 10, 0, 8, 9, 10, 10, 10, 0, 3),
     "makopa_workload_probe": (7, 7, 7, 3),
+    "makopa_journal_supervisor_probe": (6, 0, 8, 9, 10, 9, 9, 0, 11, 12, 3),
+    "makopa_journal_workload_probe": (7, 7, 7, 7, 3),
+}
+PROBE_SIZES = {
+    "makopa_sender_probe": 0x1C2,
+    "makopa_receiver_probe": 0x139,
+    "makopa_supervisor_probe": 0x22C,
+    "makopa_workload_probe": 0x74,
+    "makopa_journal_supervisor_probe": 0x738,
+    "makopa_journal_workload_probe": 0x96,
 }
 REQUIRED_SYMBOLS = TRAMPOLINES + (
     "makopa_exception_dispatch",
@@ -101,10 +113,22 @@ def trap_operations(body: str) -> tuple[int, ...]:
     return tuple(operations)
 
 
+def symbol_sizes(disassembly: str) -> dict[str, int]:
+    """Recover function sizes from the objdump symbol table."""
+    sizes: dict[str, int] = {}
+    for match in re.finditer(
+        r"(?m)^[0-9a-fA-F]+\s+\w+\s+F\s+\S+\s+([0-9a-fA-F]+)\s+(\S+)\s*$",
+        disassembly,
+    ):
+        sizes[match.group(2)] = int(match.group(1), 16)
+    return sizes
+
+
 def disassembly_violations(disassembly: str) -> list[str]:
     """Return machine-code contract violations."""
     errors: list[str] = []
     bodies: dict[str, str] = {}
+    sizes = symbol_sizes(disassembly)
     for symbol in REQUIRED_SYMBOLS:
         body = symbol_body(disassembly, symbol)
         if body is None:
@@ -211,6 +235,11 @@ def disassembly_violations(disassembly: str) -> list[str]:
             errors.append(f"{probe} lacks the fixed inline message evidence")
         if "hlt" not in body:
             errors.append(f"{probe} lacks deterministic failure transfer")
+        if sizes.get(probe) != PROBE_SIZES[probe]:
+            errors.append(
+                f"{probe} linked size mismatch: expected {PROBE_SIZES[probe]}, "
+                f"found {sizes.get(probe)!r}"
+            )
     sender = bodies.get("makopa_sender_probe", "")
     if not re.search(r"\bcmp[a-z]*\s+\$0x6,\s*%rax\b", sender):
         errors.append("sender probe does not require exact stale-handle status 6")
@@ -239,12 +268,42 @@ def disassembly_violations(disassembly: str) -> list[str]:
     for argument in ("0x31", "0x32", "0x33"):
         if argument not in workload:
             errors.append(f"workload probe lacks request argument evidence {argument}")
+    journal_supervisor = bodies.get("makopa_journal_supervisor_probe", "")
+    if not re.search(r"\$0x13,\s*%(?:e|r)di\b", journal_supervisor):
+        errors.append("journal supervisor probe lacks fixed read selector 0x13")
+    if not re.search(r"\$(?:0x12|18),\s*%rax\b", journal_supervisor):
+        errors.append("journal supervisor probe lacks failed-effect status 18")
+    if "0x41" not in journal_supervisor or not re.search(
+        r"\bincq?\s+%rbx\b", journal_supervisor
+    ) or not re.search(r"\bcmpq?\s+\$0x5,\s*%r15\b", journal_supervisor):
+        errors.append("journal supervisor probe lacks four-lifecycle loop evidence")
+    journal_workload = bodies.get("makopa_journal_workload_probe", "")
+    if not re.search(r"\$0x10,\s*%(?:e|r)di\b", journal_workload):
+        errors.append("journal workload probe lacks broker-submit selector evidence 0x10")
+    for status in (16, 17, 18):
+        if not re.search(
+            rf"\$(?:0x{status:x}|{status}),\s*%rax\b", journal_workload
+        ):
+            errors.append(
+                f"journal workload probe lacks exact lifecycle result {status}"
+            )
+    for argument in ("0x41", "0x42", "0x43", "0x44"):
+        if argument not in journal_workload:
+            errors.append(
+                f"journal workload probe lacks journal argument evidence {argument}"
+            )
     return errors
 
 
 def disassemble(objdump: Path, kernel: Path) -> str:
     result = subprocess.run(
-        [str(objdump), "--disassemble", "--no-show-raw-insn", str(kernel)],
+        [
+            str(objdump),
+            "--syms",
+            "--disassemble",
+            "--no-show-raw-insn",
+            str(kernel),
+        ],
         capture_output=True,
         check=False,
         text=True,
@@ -271,7 +330,7 @@ def main() -> int:
         return 1
     print(
         "verify-exception-trampolines: stable exception, complete task-switch, "
-        "capability, and approval-probe paths matched"
+        "capability, approval, and effect-journal probe paths matched"
     )
     return 0
 

@@ -6,7 +6,15 @@ from scripts.verify_exception_trampolines import disassembly_violations
 
 
 def valid_disassembly() -> str:
-    return '''0000000000100000 <makopa_page_fault_trampoline>:
+    return '''SYMBOL TABLE:
+0000000000100400 g     F .text 00000000000001c2 makopa_sender_probe
+0000000000100500 g     F .text 0000000000000139 makopa_receiver_probe
+0000000000100600 g     F .text 000000000000022c makopa_supervisor_probe
+0000000000100700 g     F .text 0000000000000074 makopa_workload_probe
+0000000000100800 g     F .text 0000000000000738 makopa_journal_supervisor_probe
+0000000000100900 g     F .text 0000000000000096 makopa_journal_workload_probe
+
+0000000000100000 <makopa_page_fault_trampoline>:
   100000:\tcld
   100001:\tmovq %cr2, %rdx
   100004:\tcallq 0x100100 <makopa_exception_dispatch>
@@ -176,6 +184,57 @@ def valid_disassembly() -> str:
   100731:\tmovl $0x3, %eax
   100736:\tint\t$0x80
   100738:\thlt
+0000000000100800 <makopa_journal_supervisor_probe>:
+  100800:\tmovl $0x6, %eax
+  100805:\tmovl $0x10, %edi
+  10080a:\tint\t$0x80
+  10080c:\tmovl $0x0, %eax
+  100811:\tint\t$0x80
+  100813:\tmovl $0x8, %eax
+  100818:\tmovl $0x41, %ebx
+  10081d:\tincq %rbx
+  100822:\tcmpq $0x5, %r15
+  10082c:\tint\t$0x80
+  10082e:\tmovl $0x9, %eax
+  100833:\tint\t$0x80
+  100835:\tmovl $0xa, %eax
+  10083a:\tmovl $0x12, %edi
+  10083f:\tint\t$0x80
+  100841:\tcmpq $0x12, %rax
+  100845:\tmovl $0x9, %eax
+  10084a:\tint\t$0x80
+  10084c:\tmovl $0x9, %eax
+  100851:\tint\t$0x80
+  100853:\tmovl $0x0, %eax
+  100858:\tint\t$0x80
+  10085a:\tmovl $0xb, %eax
+  10085f:\tmovl $0x13, %edi
+  100864:\tint\t$0x80
+  100866:\tmovl $0xc, %eax
+  10086b:\tint\t$0x80
+  10086d:\tmovl $0x3, %eax
+  100872:\tint\t$0x80
+  100874:\thlt
+0000000000100900 <makopa_journal_workload_probe>:
+  100900:\tmovl $0x7, %eax
+  100905:\tmovl $0x10, %edi
+  10090a:\tmovl $0x41, %edx
+  10090f:\tint\t$0x80
+  100911:\tcmpq $0x10, %rax
+  100915:\tmovl $0x7, %eax
+  10091a:\tmovl $0x42, %edx
+  10091f:\tint\t$0x80
+  100921:\tcmpq $0x11, %rax
+  100925:\tmovl $0x7, %eax
+  10092a:\tmovl $0x43, %edx
+  10092f:\tint\t$0x80
+  100931:\tmovl $0x7, %eax
+  100936:\tmovl $0x44, %edx
+  10093b:\tint\t$0x80
+  10093d:\tcmpq $0x12, %rax
+  100941:\tmovl $0x3, %eax
+  100946:\tint\t$0x80
+  100948:\thlt
 '''
 
 
@@ -266,6 +325,33 @@ class VerifyExceptionTrampolinesTests(unittest.TestCase):
         errors = disassembly_violations(disassembly)
         self.assertIn("supervisor probe lacks approval argument evidence 0x34", errors)
         self.assertIn("workload probe lacks exact approval result 17", errors)
+
+    def test_rejects_changed_effect_journal_operation_order(self) -> None:
+        disassembly = valid_disassembly().replace(
+            "  100866:\tmovl $0xc, %eax\n",
+            "  100866:\tmovl $0xb, %eax\n",
+        )
+        errors = disassembly_violations(disassembly)
+        self.assertTrue(
+            any(
+                "makopa_journal_supervisor_probe trap operation order" in error
+                for error in errors
+            )
+        )
+
+    def test_rejects_changed_journal_probe_size_and_read_selector(self) -> None:
+        disassembly = valid_disassembly().replace(
+            "0000000000100800 g     F .text 0000000000000738 makopa_journal_supervisor_probe",
+            "0000000000100800 g     F .text 0000000000000737 makopa_journal_supervisor_probe",
+        ).replace(
+            "  10085f:\tmovl $0x13, %edi\n",
+            "  10085f:\tmovl $0x12, %edi\n",
+        )
+        errors = disassembly_violations(disassembly)
+        self.assertTrue(any("linked size mismatch" in error for error in errors))
+        self.assertIn(
+            "journal supervisor probe lacks fixed read selector 0x13", errors
+        )
 
 
 if __name__ == "__main__":

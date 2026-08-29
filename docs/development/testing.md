@@ -57,6 +57,14 @@ deny, approval, deterministic expiry, alteration, replay, second use, broker
 capacity, non-wrapping sequence and epoch exhaustion; atomic synthetic-effect
 commit; and approval-first teardown. `Runtime` occupies exactly 3,112 bytes and
 is compile-time asserted below the existing 64 KiB bound.
+The ADR-0007 tests preserve both base constructors and every earlier runtime
+test while covering the exact 128-byte record, 2,072-byte journal, and
+5,184-byte `JournaledRuntime` layouts; final-handle publication and every
+rollback step; three-slot lifecycle admission; ordered deny, expire, complete,
+and failed-effect records; resolved capability and kernel-teardown attribution;
+payload redaction; immutable typed reads; zero padding; capacity and sequence
+exhaustion; terminal-before-seal ordering; and final reclamation. The wrapper
+retains fixed storage, `no_std`, and the dependency-free task-runtime manifest.
 Normalization remains capped at 1,024 fixed-size region records backed by a 24
 KiB loader-owned buffer. The static evidence check validates schema,
 traceability, local references, and accepted-decision coverage. The dated
@@ -117,6 +125,11 @@ approve, expire, altered commit, exact commit, replay, yield, and exit sequence.
 Their disassembly must retain fixed selectors, approval status values, inline
 arguments `31` through `34`, and the workload's denied and expired result checks
 without weakening any earlier probe assertion.
+The separate journaled probes are fixed at 1,848 supervisor bytes, including the
+1,408-byte expected-record table, and 150 workload bytes. The verifier requires
+the four request lifecycles, selector `0x13`, operations `11` and `12`, the
+failed-effect result, all arguments `41` through `44`, and the complete bounded
+read loop while keeping every probe within its 4,096-byte text mapping.
 
 ```sh
 python scripts/build_uefi.py
@@ -138,7 +151,8 @@ both:
   `MakopaOS isolation v1 ok user-fault-contained\r\n`, followed by
   `MakopaOS ipc v1 ok cooperative-two-task\r\n`, followed by
   `MakopaOS capabilities v1 ok task-local-attenuation\r\n`, followed by
-  `MakopaOS approval v1 ok staged-single-use\r\n`, appears once as the terminal
+  `MakopaOS approval v1 ok staged-single-use\r\n`, followed by
+  `MakopaOS effects v1 ok ordered-redacted\r\n`, appears once as the terminal
   serial sequence after any firmware console records;
 - QEMU process status `33`, produced by writing success value `0x10` to port
   `0xf4`.
@@ -178,6 +192,18 @@ broker, effect, capability, task, address-space, and frame state. This proves
 only the fixed synthetic in-memory boundary: it does not claim human approval,
 authenticated identity, wall-clock expiry, policy-language evaluation, real
 effects, effect logging, external protocols, dynamic objects, or availability.
+
+The effect-journal record begins a third separately constructed runtime profile
+after every earlier transcript has completed. Four requests produce exactly 11
+records: deny, approve then expire, approve then complete, and approve then fail
+against the occupied synthetic effect. The supervisor reads all 16 words of
+every immutable record through operations `11` and `12`; the final triplet is
+zero padded. Kernel closeout independently checks every header, event, status,
+sequence, epoch, principal, actor, subject, request, action, resolved object,
+right, and reserved field before clearing the sealed journal. The result proves
+only bounded boot-local evidence. It does not claim persistence, crash recovery,
+tamper resistance, non-repudiation, authenticated identity, wall-clock order,
+external export, real effects, or availability after journal exhaustion.
 
 ## Dependency audit
 

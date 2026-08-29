@@ -25,17 +25,20 @@ pub const CAPABILITY_RIGHT_START: u64 = 1 << 3;
 pub const CAPABILITY_RIGHT_SUBMIT_APPROVAL: u64 = 1 << 4;
 pub const CAPABILITY_RIGHT_DECIDE_APPROVAL: u64 = 1 << 5;
 pub const CAPABILITY_RIGHT_COMMIT_EFFECT: u64 = 1 << 6;
+pub const CAPABILITY_RIGHT_READ_EFFECT_JOURNAL: u64 = 1 << 7;
 pub const CAPABILITY_RIGHTS_V1: u64 = CAPABILITY_RIGHT_SEND
     | CAPABILITY_RIGHT_RECEIVE
     | CAPABILITY_RIGHT_DUPLICATE
     | CAPABILITY_RIGHT_START
     | CAPABILITY_RIGHT_SUBMIT_APPROVAL
     | CAPABILITY_RIGHT_DECIDE_APPROVAL
-    | CAPABILITY_RIGHT_COMMIT_EFFECT;
+    | CAPABILITY_RIGHT_COMMIT_EFFECT
+    | CAPABILITY_RIGHT_READ_EFFECT_JOURNAL;
 pub const INITIAL_CAPABILITY_HANDLE: u64 = 1 << CAPABILITY_SLOT_BITS;
 pub const SUPERVISOR_TASK_CONTROL_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE;
 pub const SUPERVISOR_DECISION_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE + 1;
 pub const SUPERVISOR_EFFECT_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE + 2;
+pub const SUPERVISOR_JOURNAL_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE + 3;
 pub const WORKLOAD_APPROVAL_HANDLE: u64 = INITIAL_CAPABILITY_HANDLE;
 pub const SUPERVISOR_GENERATION: u64 = 4;
 pub const WORKLOAD_GENERATION: u64 = 5;
@@ -48,6 +51,7 @@ pub const WORKLOAD_IMAGE_ID: u64 = 1;
 pub const TASK_CONTROL_OBJECT_ID: u64 = 1;
 pub const APPROVAL_BROKER_OBJECT_ID: u64 = 1;
 pub const TEST_EFFECT_OBJECT_ID: u64 = 1;
+pub const EFFECT_JOURNAL_OBJECT_ID: u64 = 1;
 pub const FIXED_OBJECT_GENERATION: u64 = 1;
 pub const APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE: u64 = 1;
 pub const APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE: u64 = 1;
@@ -108,6 +112,8 @@ pub enum TrapOperation {
     InspectApproval = 8,
     DecideApproval = 9,
     CommitEffect = 10,
+    InspectEffectJournal = 11,
+    ReadEffectRecord = 12,
 }
 
 impl TrapOperation {
@@ -124,6 +130,8 @@ impl TrapOperation {
             8 => Some(Self::InspectApproval),
             9 => Some(Self::DecideApproval),
             10 => Some(Self::CommitEffect),
+            11 => Some(Self::InspectEffectJournal),
+            12 => Some(Self::ReadEffectRecord),
             _ => None,
         }
     }
@@ -153,6 +161,9 @@ pub enum TrapStatus {
     EffectUnavailable = 18,
     BrokerUnavailable = 19,
     AlreadyLaunched = 20,
+    JournalFull = 21,
+    JournalUnavailable = 22,
+    InvalidRecord = 23,
 }
 
 #[repr(C)]
@@ -195,10 +206,407 @@ pub struct ApprovalRequestV1 {
     pub resulting_rights: u64,
 }
 
+pub const EFFECT_RECORD_SCHEMA_VERSION: u32 = 1;
+pub const EFFECT_RECORD_BYTE_SIZE: u32 = 128;
+pub const EFFECT_JOURNAL_RECORD_COUNT: usize = 16;
+pub const EFFECT_JOURNAL_OBJECT_GENERATION: u64 = 1;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u32)]
+pub enum EffectEventKind {
+    Requested = 1,
+    Approved = 2,
+    Denied = 3,
+    Expired = 4,
+    Completed = 5,
+    Failed = 6,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct EffectRecordV1 {
+    pub schema_version: u32,
+    pub byte_size: u32,
+    pub event_kind: u32,
+    pub status: u32,
+    pub record_sequence: u64,
+    pub decision_epoch: u64,
+    pub principal_id: u64,
+    pub actor_task_id: u64,
+    pub actor_task_generation: u64,
+    pub subject_task_id: u64,
+    pub subject_task_generation: u64,
+    pub request_sequence: u64,
+    pub action_id: u64,
+    pub capability_object_type: u32,
+    pub reserved_zero: u32,
+    pub capability_object_id: u64,
+    pub capability_object_generation: u64,
+    pub capability_rights: u64,
+    pub trailing_reserved_zero: u64,
+}
+
+impl EffectRecordV1 {
+    const fn event(
+        event_kind: EffectEventKind,
+        status: TrapStatus,
+        decision_epoch: u64,
+        actor_task_id: u64,
+        actor_task_generation: u64,
+        request: ApprovalRequestV1,
+        capability_object_type: u32,
+        capability_rights: u64,
+    ) -> Self {
+        Self {
+            schema_version: EFFECT_RECORD_SCHEMA_VERSION,
+            byte_size: EFFECT_RECORD_BYTE_SIZE,
+            event_kind: event_kind as u32,
+            status: status as u32,
+            record_sequence: 0,
+            decision_epoch,
+            principal_id: request.principal_id,
+            actor_task_id,
+            actor_task_generation,
+            subject_task_id: request.workload_task_id,
+            subject_task_generation: request.workload_generation,
+            request_sequence: request.sequence,
+            action_id: request.action_id,
+            capability_object_type,
+            reserved_zero: 0,
+            capability_object_id: if capability_object_type == OBJECT_TYPE_TEST_EFFECT {
+                request.effect_object_id
+            } else {
+                APPROVAL_BROKER_OBJECT_ID
+            },
+            capability_object_generation: if capability_object_type == OBJECT_TYPE_TEST_EFFECT {
+                request.effect_object_generation
+            } else {
+                FIXED_OBJECT_GENERATION
+            },
+            capability_rights,
+            trailing_reserved_zero: 0,
+        }
+    }
+
+    pub fn word(self, index: usize) -> Option<u64> {
+        match index {
+            0 => Some(u64::from(self.schema_version) | (u64::from(self.byte_size) << 32)),
+            1 => Some(u64::from(self.event_kind) | (u64::from(self.status) << 32)),
+            2 => Some(self.record_sequence),
+            3 => Some(self.decision_epoch),
+            4 => Some(self.principal_id),
+            5 => Some(self.actor_task_id),
+            6 => Some(self.actor_task_generation),
+            7 => Some(self.subject_task_id),
+            8 => Some(self.subject_task_generation),
+            9 => Some(self.request_sequence),
+            10 => Some(self.action_id),
+            11 => {
+                Some(u64::from(self.capability_object_type) | (u64::from(self.reserved_zero) << 32))
+            }
+            12 => Some(self.capability_object_id),
+            13 => Some(self.capability_object_generation),
+            14 => Some(self.capability_rights),
+            15 => Some(self.trailing_reserved_zero),
+            _ => None,
+        }
+    }
+}
+
+pub const EFFECT_RECORD_SCHEMA_VERSION_OFFSET: usize = offset_of!(EffectRecordV1, schema_version);
+pub const EFFECT_RECORD_BYTE_SIZE_OFFSET: usize = offset_of!(EffectRecordV1, byte_size);
+pub const EFFECT_RECORD_EVENT_KIND_OFFSET: usize = offset_of!(EffectRecordV1, event_kind);
+pub const EFFECT_RECORD_STATUS_OFFSET: usize = offset_of!(EffectRecordV1, status);
+pub const EFFECT_RECORD_SEQUENCE_OFFSET: usize = offset_of!(EffectRecordV1, record_sequence);
+pub const EFFECT_RECORD_DECISION_EPOCH_OFFSET: usize = offset_of!(EffectRecordV1, decision_epoch);
+pub const EFFECT_RECORD_PRINCIPAL_ID_OFFSET: usize = offset_of!(EffectRecordV1, principal_id);
+pub const EFFECT_RECORD_ACTOR_TASK_ID_OFFSET: usize = offset_of!(EffectRecordV1, actor_task_id);
+pub const EFFECT_RECORD_ACTOR_GENERATION_OFFSET: usize =
+    offset_of!(EffectRecordV1, actor_task_generation);
+pub const EFFECT_RECORD_SUBJECT_TASK_ID_OFFSET: usize = offset_of!(EffectRecordV1, subject_task_id);
+pub const EFFECT_RECORD_SUBJECT_GENERATION_OFFSET: usize =
+    offset_of!(EffectRecordV1, subject_task_generation);
+pub const EFFECT_RECORD_REQUEST_SEQUENCE_OFFSET: usize =
+    offset_of!(EffectRecordV1, request_sequence);
+pub const EFFECT_RECORD_ACTION_ID_OFFSET: usize = offset_of!(EffectRecordV1, action_id);
+pub const EFFECT_RECORD_OBJECT_TYPE_OFFSET: usize =
+    offset_of!(EffectRecordV1, capability_object_type);
+pub const EFFECT_RECORD_RESERVED_ZERO_OFFSET: usize = offset_of!(EffectRecordV1, reserved_zero);
+pub const EFFECT_RECORD_OBJECT_ID_OFFSET: usize = offset_of!(EffectRecordV1, capability_object_id);
+pub const EFFECT_RECORD_OBJECT_GENERATION_OFFSET: usize =
+    offset_of!(EffectRecordV1, capability_object_generation);
+pub const EFFECT_RECORD_RIGHTS_OFFSET: usize = offset_of!(EffectRecordV1, capability_rights);
+pub const EFFECT_RECORD_TRAILING_RESERVED_OFFSET: usize =
+    offset_of!(EffectRecordV1, trailing_reserved_zero);
+
+const _: () = assert!(size_of::<EffectRecordV1>() == EFFECT_RECORD_BYTE_SIZE as usize);
+const _: () = assert!(EFFECT_RECORD_SCHEMA_VERSION_OFFSET == 0);
+const _: () = assert!(EFFECT_RECORD_BYTE_SIZE_OFFSET == 4);
+const _: () = assert!(EFFECT_RECORD_EVENT_KIND_OFFSET == 8);
+const _: () = assert!(EFFECT_RECORD_STATUS_OFFSET == 12);
+const _: () = assert!(EFFECT_RECORD_SEQUENCE_OFFSET == 16);
+const _: () = assert!(EFFECT_RECORD_DECISION_EPOCH_OFFSET == 24);
+const _: () = assert!(EFFECT_RECORD_PRINCIPAL_ID_OFFSET == 32);
+const _: () = assert!(EFFECT_RECORD_ACTOR_TASK_ID_OFFSET == 40);
+const _: () = assert!(EFFECT_RECORD_ACTOR_GENERATION_OFFSET == 48);
+const _: () = assert!(EFFECT_RECORD_SUBJECT_TASK_ID_OFFSET == 56);
+const _: () = assert!(EFFECT_RECORD_SUBJECT_GENERATION_OFFSET == 64);
+const _: () = assert!(EFFECT_RECORD_REQUEST_SEQUENCE_OFFSET == 72);
+const _: () = assert!(EFFECT_RECORD_ACTION_ID_OFFSET == 80);
+const _: () = assert!(EFFECT_RECORD_OBJECT_TYPE_OFFSET == 88);
+const _: () = assert!(EFFECT_RECORD_RESERVED_ZERO_OFFSET == 92);
+const _: () = assert!(EFFECT_RECORD_OBJECT_ID_OFFSET == 96);
+const _: () = assert!(EFFECT_RECORD_OBJECT_GENERATION_OFFSET == 104);
+const _: () = assert!(EFFECT_RECORD_RIGHTS_OFFSET == 112);
+const _: () = assert!(EFFECT_RECORD_TRAILING_RESERVED_OFFSET == 120);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[repr(u8)]
+pub enum EffectJournalState {
+    Building,
+    Live,
+    Sealed,
+    Dead,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EffectJournalV1 {
+    state: EffectJournalState,
+    committed_record_count: u8,
+    reserved_record_count: u8,
+    reserved_zero: [u8; 5],
+    object_generation: u64,
+    next_record_sequence: u64,
+    records: [EffectRecordV1; EFFECT_JOURNAL_RECORD_COUNT],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct EffectJournalSnapshot {
+    pub state: EffectJournalState,
+    pub committed_record_count: u8,
+    pub reserved_record_count: u8,
+    pub object_generation: u64,
+    pub next_record_sequence: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EffectJournalError {
+    Full,
+    Unavailable,
+    InvalidRecord,
+    Invariant,
+}
+
+impl EffectJournalV1 {
+    const DEAD: Self = Self {
+        state: EffectJournalState::Dead,
+        committed_record_count: 0,
+        reserved_record_count: 0,
+        reserved_zero: [0; 5],
+        object_generation: 0,
+        next_record_sequence: 0,
+        records: [EffectRecordV1 {
+            schema_version: 0,
+            byte_size: 0,
+            event_kind: 0,
+            status: 0,
+            record_sequence: 0,
+            decision_epoch: 0,
+            principal_id: 0,
+            actor_task_id: 0,
+            actor_task_generation: 0,
+            subject_task_id: 0,
+            subject_task_generation: 0,
+            request_sequence: 0,
+            action_id: 0,
+            capability_object_type: 0,
+            reserved_zero: 0,
+            capability_object_id: 0,
+            capability_object_generation: 0,
+            capability_rights: 0,
+            trailing_reserved_zero: 0,
+        }; EFFECT_JOURNAL_RECORD_COUNT],
+    };
+
+    const fn building() -> Self {
+        Self {
+            state: EffectJournalState::Building,
+            committed_record_count: 0,
+            reserved_record_count: 0,
+            reserved_zero: [0; 5],
+            object_generation: EFFECT_JOURNAL_OBJECT_GENERATION,
+            next_record_sequence: 1,
+            records: Self::DEAD.records,
+        }
+    }
+
+    const fn snapshot(&self) -> EffectJournalSnapshot {
+        EffectJournalSnapshot {
+            state: self.state,
+            committed_record_count: self.committed_record_count,
+            reserved_record_count: self.reserved_record_count,
+            object_generation: self.object_generation,
+            next_record_sequence: self.next_record_sequence,
+        }
+    }
+
+    fn publish(&mut self) -> Result<(), EffectJournalError> {
+        if self.state != EffectJournalState::Building {
+            return Err(EffectJournalError::Invariant);
+        }
+        self.state = EffectJournalState::Live;
+        Ok(())
+    }
+
+    fn seal(&mut self) -> Result<(), EffectJournalError> {
+        if self.state != EffectJournalState::Live || self.reserved_record_count != 0 {
+            return Err(EffectJournalError::Unavailable);
+        }
+        self.state = EffectJournalState::Sealed;
+        Ok(())
+    }
+
+    fn clear_dead(&mut self) {
+        *self = Self::DEAD;
+    }
+
+    fn begin_lifecycle(&mut self, record: EffectRecordV1) -> Result<(), EffectJournalError> {
+        if self.state != EffectJournalState::Live {
+            return Err(EffectJournalError::Unavailable);
+        }
+        let used = usize::from(self.committed_record_count)
+            .checked_add(usize::from(self.reserved_record_count))
+            .ok_or(EffectJournalError::Invariant)?;
+        if EFFECT_JOURNAL_RECORD_COUNT.saturating_sub(used) < 3
+            || self.next_record_sequence == 0
+            || self.next_record_sequence.checked_add(2).is_none()
+        {
+            return Err(EffectJournalError::Full);
+        }
+        self.append_unreserved(record)?;
+        self.reserved_record_count = 2;
+        Ok(())
+    }
+
+    fn append_reserved(
+        &mut self,
+        record: EffectRecordV1,
+        release_unused: bool,
+    ) -> Result<(), EffectJournalError> {
+        if self.state != EffectJournalState::Live || self.reserved_record_count == 0 {
+            return Err(EffectJournalError::Unavailable);
+        }
+        self.reserved_record_count -= 1;
+        self.append_unreserved(record)?;
+        if release_unused {
+            self.reserved_record_count = 0;
+        }
+        Ok(())
+    }
+
+    fn append_unreserved(&mut self, mut record: EffectRecordV1) -> Result<(), EffectJournalError> {
+        let index = usize::from(self.committed_record_count);
+        if index >= EFFECT_JOURNAL_RECORD_COUNT || self.next_record_sequence == 0 {
+            return Err(EffectJournalError::Full);
+        }
+        if record.schema_version != EFFECT_RECORD_SCHEMA_VERSION
+            || record.byte_size != EFFECT_RECORD_BYTE_SIZE
+            || record.record_sequence != 0
+            || record.reserved_zero != 0
+            || record.trailing_reserved_zero != 0
+        {
+            return Err(EffectJournalError::Invariant);
+        }
+        record.record_sequence = self.next_record_sequence;
+        self.records[index] = record;
+        self.committed_record_count += 1;
+        self.next_record_sequence = self.next_record_sequence.checked_add(1).unwrap_or(0);
+        Ok(())
+    }
+
+    fn record(&self, sequence: u64) -> Result<EffectRecordV1, EffectJournalError> {
+        if !matches!(
+            self.state,
+            EffectJournalState::Live | EffectJournalState::Sealed
+        ) {
+            return Err(EffectJournalError::Unavailable);
+        }
+        let index = sequence
+            .checked_sub(1)
+            .and_then(|value| usize::try_from(value).ok())
+            .filter(|index| *index < usize::from(self.committed_record_count))
+            .ok_or(EffectJournalError::InvalidRecord)?;
+        let record = self.records[index];
+        if record.record_sequence != sequence {
+            return Err(EffectJournalError::Invariant);
+        }
+        Ok(record)
+    }
+
+    fn read_triplet(&self, sequence: u64, triplet: u64) -> Result<[u64; 3], EffectJournalError> {
+        let triplet = usize::try_from(triplet)
+            .ok()
+            .filter(|value| *value <= 5)
+            .ok_or(EffectJournalError::InvalidRecord)?;
+        let record = self.record(sequence)?;
+        let first = triplet * 3;
+        Ok([
+            record.word(first).unwrap_or(0),
+            record.word(first + 1).unwrap_or(0),
+            record.word(first + 2).unwrap_or(0),
+        ])
+    }
+
+    fn validate(&self) -> Result<(), EffectJournalError> {
+        if self.state == EffectJournalState::Dead {
+            return if *self == Self::DEAD {
+                Ok(())
+            } else {
+                Err(EffectJournalError::Invariant)
+            };
+        }
+        if self.state == EffectJournalState::Building
+            || self.reserved_zero != [0; 5]
+            || self.object_generation != EFFECT_JOURNAL_OBJECT_GENERATION
+            || usize::from(self.committed_record_count) > EFFECT_JOURNAL_RECORD_COUNT
+            || usize::from(self.committed_record_count) + usize::from(self.reserved_record_count)
+                > EFFECT_JOURNAL_RECORD_COUNT
+            || self.reserved_record_count > 2
+            || (self.state == EffectJournalState::Sealed && self.reserved_record_count != 0)
+        {
+            return Err(EffectJournalError::Invariant);
+        }
+        for (index, record) in self.records.iter().enumerate() {
+            if index < usize::from(self.committed_record_count) {
+                if record.schema_version != EFFECT_RECORD_SCHEMA_VERSION
+                    || record.byte_size != EFFECT_RECORD_BYTE_SIZE
+                    || record.record_sequence != index as u64 + 1
+                    || record.reserved_zero != 0
+                    || record.trailing_reserved_zero != 0
+                {
+                    return Err(EffectJournalError::Invariant);
+                }
+            } else if *record != EffectRecordV1::default() {
+                return Err(EffectJournalError::Invariant);
+            }
+        }
+        if self.next_record_sequence != u64::from(self.committed_record_count) + 1 {
+            return Err(EffectJournalError::Invariant);
+        }
+        Ok(())
+    }
+}
+
+pub const EFFECT_JOURNAL_BYTES: usize = size_of::<EffectJournalV1>();
+pub const EFFECT_JOURNAL_BYTES_V1: usize = 2_072;
+const _: () = assert!(EFFECT_JOURNAL_BYTES == EFFECT_JOURNAL_BYTES_V1);
+
 pub const OBJECT_TYPE_ENDPOINT: u32 = 1;
 pub const OBJECT_TYPE_TASK_CONTROL: u32 = 2;
 pub const OBJECT_TYPE_APPROVAL_BROKER: u32 = 3;
 pub const OBJECT_TYPE_TEST_EFFECT: u32 = 4;
+pub const OBJECT_TYPE_EFFECT_JOURNAL: u32 = 5;
 
 pub const REGISTERED_LAUNCH_MANIFEST: LaunchManifestV1 = LaunchManifestV1 {
     schema_version: MANIFEST_SCHEMA_VERSION,
@@ -954,6 +1362,7 @@ const fn valid_rights(object_type: u32, rights: u64) -> bool {
             )
         }
         OBJECT_TYPE_TEST_EFFECT => rights == CAPABILITY_RIGHT_COMMIT_EFFECT,
+        OBJECT_TYPE_EFFECT_JOURNAL => rights == CAPABILITY_RIGHT_READ_EFFECT_JOURNAL,
         _ => false,
     }
 }
@@ -1238,6 +1647,7 @@ pub enum RuntimeError {
     ManifestInvariant,
     BrokerInvariant,
     EffectInvariant,
+    JournalInvariant,
     PublicationFailure,
 }
 
@@ -2020,6 +2430,11 @@ impl Runtime {
             TrapOperation::CommitEffect => {
                 self.commit_effect(task, input.rdi, input.rsi, input.rdx)
             }
+            TrapOperation::InspectEffectJournal | TrapOperation::ReadEffectRecord => {
+                self.set_result(task, TrapStatus::InvalidOperation, 0)?;
+                self.validate()?;
+                Ok(TrapOutcome::Resume(task))
+            }
         }
     }
 
@@ -2747,6 +3162,665 @@ impl Runtime {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct JournaledRuntime {
+    runtime: Runtime,
+    journal: EffectJournalV1,
+}
+
+pub const JOURNALED_RUNTIME_BYTES: usize = size_of::<JournaledRuntime>();
+pub const JOURNALED_RUNTIME_BYTES_V1: usize = 5_184;
+const _: () = assert!(JOURNALED_RUNTIME_BYTES == JOURNALED_RUNTIME_BYTES_V1);
+const _: () = assert!(JOURNALED_RUNTIME_BYTES < 64 * 1024);
+
+impl JournaledRuntime {
+    pub fn new_supervised(
+        supervisor: TaskContextV1,
+        workload: TaskContextV1,
+    ) -> Result<Self, RuntimeError> {
+        if supervisor.task_id != SENDER_TASK_ID || workload.task_id != RECEIVER_TASK_ID {
+            return Err(RuntimeError::InvalidTask);
+        }
+        if supervisor.generation != SUPERVISOR_GENERATION
+            || workload.generation != WORKLOAD_GENERATION
+        {
+            return Err(RuntimeError::InvalidGeneration);
+        }
+        let mut runtime = Self {
+            runtime: Runtime::unpublished_supervised(supervisor, workload),
+            journal: EffectJournalV1::building(),
+        };
+        runtime.publish_supervisor(None)?;
+        Ok(runtime)
+    }
+
+    fn publish_supervisor(&mut self, fail_before_step: Option<usize>) -> Result<(), RuntimeError> {
+        let mut base_handles = [0_u64; 3];
+        let mut base_len = 0;
+        let mut journal_handle = 0;
+        for (step, object_type, object_id, rights) in [
+            (
+                0,
+                OBJECT_TYPE_TASK_CONTROL,
+                TASK_CONTROL_OBJECT_ID,
+                CAPABILITY_RIGHT_START,
+            ),
+            (
+                1,
+                OBJECT_TYPE_APPROVAL_BROKER,
+                APPROVAL_BROKER_OBJECT_ID,
+                CAPABILITY_RIGHT_DECIDE_APPROVAL,
+            ),
+            (
+                2,
+                OBJECT_TYPE_TEST_EFFECT,
+                TEST_EFFECT_OBJECT_ID,
+                CAPABILITY_RIGHT_COMMIT_EFFECT,
+            ),
+        ] {
+            if fail_before_step == Some(step) {
+                self.rollback_publication(&base_handles, base_len, journal_handle);
+                return Err(RuntimeError::PublicationFailure);
+            }
+            let handle = match self.runtime.tasks[0].capabilities.install_object_building(
+                object_type,
+                ObjectReference {
+                    id: object_id,
+                    generation: FIXED_OBJECT_GENERATION,
+                },
+                rights,
+            ) {
+                Ok(handle) => handle,
+                Err(error) => {
+                    self.rollback_publication(&base_handles, base_len, journal_handle);
+                    return Err(error);
+                }
+            };
+            base_handles[base_len] = handle;
+            base_len += 1;
+        }
+        if fail_before_step == Some(3) {
+            self.rollback_publication(&base_handles, base_len, journal_handle);
+            return Err(RuntimeError::PublicationFailure);
+        }
+        journal_handle = match self.runtime.tasks[0].capabilities.install_object_building(
+            OBJECT_TYPE_EFFECT_JOURNAL,
+            ObjectReference {
+                id: EFFECT_JOURNAL_OBJECT_ID,
+                generation: EFFECT_JOURNAL_OBJECT_GENERATION,
+            },
+            CAPABILITY_RIGHT_READ_EFFECT_JOURNAL,
+        ) {
+            Ok(handle) if handle == SUPERVISOR_JOURNAL_HANDLE => handle,
+            Ok(handle) => {
+                self.runtime.tasks[0].capabilities.rollback_install(handle);
+                self.rollback_publication(&base_handles, base_len, 0);
+                return Err(RuntimeError::CapabilityInvariant);
+            }
+            Err(error) => {
+                self.rollback_publication(&base_handles, base_len, journal_handle);
+                return Err(error);
+            }
+        };
+        if fail_before_step == Some(4) {
+            self.rollback_publication(&base_handles, base_len, journal_handle);
+            return Err(RuntimeError::PublicationFailure);
+        }
+        if self.journal.publish().is_err() {
+            self.rollback_publication(&base_handles, base_len, journal_handle);
+            return Err(RuntimeError::JournalInvariant);
+        }
+        if fail_before_step == Some(5) {
+            self.rollback_publication(&base_handles, base_len, journal_handle);
+            return Err(RuntimeError::PublicationFailure);
+        }
+        if self.runtime.tasks[0].capabilities.publish().is_err() {
+            self.rollback_publication(&base_handles, base_len, journal_handle);
+            return Err(RuntimeError::CapabilityInvariant);
+        }
+        self.runtime.broker.state = ApprovalBrokerState::Empty;
+        if fail_before_step == Some(6) {
+            self.rollback_publication(&base_handles, base_len, journal_handle);
+            return Err(RuntimeError::PublicationFailure);
+        }
+        if self
+            .runtime
+            .queue
+            .push(SENDER_TASK_ID)
+            .and_then(|_| self.validate())
+            .is_err()
+        {
+            self.rollback_publication(&base_handles, base_len, journal_handle);
+            return Err(RuntimeError::PublicationFailure);
+        }
+        Ok(())
+    }
+
+    fn rollback_publication(
+        &mut self,
+        base_handles: &[u64; 3],
+        base_len: usize,
+        journal_handle: u64,
+    ) {
+        if journal_handle != 0 {
+            self.runtime.tasks[0]
+                .capabilities
+                .rollback_install(journal_handle);
+        }
+        self.journal.clear_dead();
+        self.runtime
+            .rollback_supervisor_publication(base_handles, base_len);
+    }
+
+    pub fn state(&self, task: u64) -> Result<TaskState, RuntimeError> {
+        self.runtime.state(task)
+    }
+
+    pub fn generation(&self, task: u64) -> Result<u64, RuntimeError> {
+        self.runtime.generation(task)
+    }
+
+    pub fn context(&self, task: u64) -> Result<&TaskContextV1, RuntimeError> {
+        self.runtime.context(task)
+    }
+
+    pub fn queue(&self) -> ([u64; TASK_COUNT], usize) {
+        self.runtime.queue()
+    }
+
+    pub const fn endpoint(&self) -> EndpointSnapshot {
+        self.runtime.endpoint()
+    }
+
+    pub const fn manifest_publication(&self) -> ManifestPublicationSnapshot {
+        self.runtime.manifest_publication()
+    }
+
+    pub const fn approval_broker(&self) -> ApprovalBrokerSnapshot {
+        self.runtime.approval_broker()
+    }
+
+    pub const fn synthetic_effect(&self) -> SyntheticEffectSnapshot {
+        self.runtime.synthetic_effect()
+    }
+
+    pub const fn effect_journal(&self) -> EffectJournalSnapshot {
+        self.journal.snapshot()
+    }
+
+    pub fn effect_record(&self, sequence: u64) -> Result<EffectRecordV1, TrapStatus> {
+        self.journal.record(sequence).map_err(Self::journal_status)
+    }
+
+    pub fn capability_table(&self, task: u64) -> Result<CapabilityTableSnapshot, RuntimeError> {
+        self.runtime.capability_table(task)
+    }
+
+    pub fn running_task(&self) -> Result<u64, RuntimeError> {
+        self.runtime.running_task()
+    }
+
+    pub fn dispatch_next(&mut self) -> Result<Option<u64>, RuntimeError> {
+        self.runtime.dispatch_next()
+    }
+
+    pub fn capture_trap(
+        &mut self,
+        task: u64,
+        frame: TrapFrameV1,
+        root: u64,
+        generation: u64,
+    ) -> Result<(), RuntimeError> {
+        self.runtime.capture_trap(task, frame, root, generation)
+    }
+
+    pub fn handle_trap(&mut self, task: u64) -> Result<TrapOutcome, RuntimeError> {
+        if self.runtime.running_task()? != task {
+            return Err(RuntimeError::WrongState);
+        }
+        let input = *self.runtime.context(task)?;
+        let operation = TrapOperation::parse(input.rax);
+        if matches!(
+            operation,
+            Some(TrapOperation::InspectEffectJournal | TrapOperation::ReadEffectRecord)
+        ) {
+            return self.handle_journal_read(task, operation.unwrap(), input);
+        }
+
+        let before = *self;
+        let before_request = self.runtime.broker.request;
+        let before_broker_state = self.runtime.broker.state;
+        let outcome = match self.runtime.handle_trap(task) {
+            Ok(outcome) => outcome,
+            Err(error) => {
+                *self = before;
+                return Err(error);
+            }
+        };
+
+        match operation {
+            Some(TrapOperation::SubmitApproval)
+                if before_broker_state == ApprovalBrokerState::Empty
+                    && self.runtime.broker.state == ApprovalBrokerState::Pending
+                    && self.runtime.broker.request_present =>
+            {
+                if before.runtime.broker.decision_epoch > u64::MAX - 3 {
+                    *self = before;
+                    self.runtime
+                        .set_result(task, TrapStatus::BrokerUnavailable, 0)?;
+                    self.validate()?;
+                    return Ok(TrapOutcome::Resume(task));
+                }
+                let request = self.runtime.broker.request;
+                let record = EffectRecordV1::event(
+                    EffectEventKind::Requested,
+                    TrapStatus::Ok,
+                    self.runtime.broker.decision_epoch,
+                    RECEIVER_TASK_ID,
+                    WORKLOAD_GENERATION,
+                    request,
+                    OBJECT_TYPE_APPROVAL_BROKER,
+                    CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+                );
+                if let Err(error) = self.journal.begin_lifecycle(record) {
+                    return self.rollback_submit(before, task, error);
+                }
+            }
+            Some(TrapOperation::DecideApproval)
+                if before.runtime.broker.request_present
+                    && self.runtime.context(task)?.rax == TrapStatus::Ok as u64 =>
+            {
+                let (kind, status, release_unused) = match input.rdx {
+                    DECISION_APPROVE
+                        if self.runtime.broker.state == ApprovalBrokerState::Approved =>
+                    {
+                        (EffectEventKind::Approved, TrapStatus::Ok, false)
+                    }
+                    DECISION_DENY if self.runtime.broker.state == ApprovalBrokerState::Empty => {
+                        (EffectEventKind::Denied, TrapStatus::ApprovalDenied, true)
+                    }
+                    DECISION_EXPIRE if self.runtime.broker.state == ApprovalBrokerState::Empty => (
+                        EffectEventKind::Expired,
+                        TrapStatus::ApprovalExpired,
+                        before_broker_state == ApprovalBrokerState::Pending,
+                    ),
+                    _ => return Err(RuntimeError::JournalInvariant),
+                };
+                let record = EffectRecordV1::event(
+                    kind,
+                    status,
+                    self.runtime.broker.decision_epoch,
+                    SENDER_TASK_ID,
+                    SUPERVISOR_GENERATION,
+                    before_request,
+                    OBJECT_TYPE_APPROVAL_BROKER,
+                    CAPABILITY_RIGHT_DECIDE_APPROVAL,
+                );
+                if self
+                    .journal
+                    .append_reserved(record, release_unused)
+                    .is_err()
+                {
+                    *self = before;
+                    return Err(RuntimeError::JournalInvariant);
+                }
+            }
+            Some(TrapOperation::CommitEffect)
+                if before_broker_state == ApprovalBrokerState::Approved
+                    && self.runtime.broker.state == ApprovalBrokerState::Empty
+                    && self.runtime.context(task)?.rax == TrapStatus::Ok as u64 =>
+            {
+                let record = EffectRecordV1::event(
+                    EffectEventKind::Completed,
+                    TrapStatus::Ok,
+                    self.runtime.broker.decision_epoch,
+                    SENDER_TASK_ID,
+                    SUPERVISOR_GENERATION,
+                    before_request,
+                    OBJECT_TYPE_TEST_EFFECT,
+                    CAPABILITY_RIGHT_COMMIT_EFFECT,
+                );
+                if self.journal.append_reserved(record, false).is_err() {
+                    *self = before;
+                    return Err(RuntimeError::JournalInvariant);
+                }
+            }
+            Some(TrapOperation::CommitEffect)
+                if before_broker_state == ApprovalBrokerState::Approved
+                    && self.runtime.broker.state == ApprovalBrokerState::Approved
+                    && self.runtime.context(task)?.rax == TrapStatus::EffectUnavailable as u64 =>
+            {
+                let next_epoch = self
+                    .runtime
+                    .broker
+                    .decision_epoch
+                    .checked_add(1)
+                    .ok_or(RuntimeError::BrokerInvariant)?;
+                self.runtime.broker.decision_epoch = next_epoch;
+                self.runtime.broker.clear_request();
+                self.runtime.broker.state = ApprovalBrokerState::Empty;
+                self.runtime
+                    .wake_workload(TrapStatus::EffectUnavailable, 0)?;
+                self.runtime
+                    .set_result(task, TrapStatus::EffectUnavailable, 0)?;
+                let record = EffectRecordV1::event(
+                    EffectEventKind::Failed,
+                    TrapStatus::EffectUnavailable,
+                    next_epoch,
+                    SENDER_TASK_ID,
+                    SUPERVISOR_GENERATION,
+                    before_request,
+                    OBJECT_TYPE_TEST_EFFECT,
+                    CAPABILITY_RIGHT_COMMIT_EFFECT,
+                );
+                if self.journal.append_reserved(record, false).is_err() {
+                    *self = before;
+                    return Err(RuntimeError::JournalInvariant);
+                }
+            }
+            _ => {}
+        }
+        if self.validate().is_err() {
+            *self = before;
+            return Err(RuntimeError::JournalInvariant);
+        }
+        Ok(outcome)
+    }
+
+    fn rollback_submit(
+        &mut self,
+        before: Self,
+        task: u64,
+        error: EffectJournalError,
+    ) -> Result<TrapOutcome, RuntimeError> {
+        let status = match error {
+            EffectJournalError::Full => TrapStatus::JournalFull,
+            EffectJournalError::Unavailable => TrapStatus::JournalUnavailable,
+            EffectJournalError::InvalidRecord | EffectJournalError::Invariant => {
+                *self = before;
+                return Err(RuntimeError::JournalInvariant);
+            }
+        };
+        *self = before;
+        self.runtime.set_result(task, status, 0)?;
+        self.validate()?;
+        Ok(TrapOutcome::Resume(task))
+    }
+
+    fn handle_journal_read(
+        &mut self,
+        task: u64,
+        operation: TrapOperation,
+        input: TaskContextV1,
+    ) -> Result<TrapOutcome, RuntimeError> {
+        let status = if operation == TrapOperation::InspectEffectJournal
+            && (input.rsi != 0 || input.rdx != 0)
+        {
+            Some(TrapStatus::InvalidOperation)
+        } else if let Err(status) = self.runtime.resolve_object(
+            task,
+            input.rdi,
+            OBJECT_TYPE_EFFECT_JOURNAL,
+            CAPABILITY_RIGHT_READ_EFFECT_JOURNAL,
+            EFFECT_JOURNAL_OBJECT_ID,
+            self.journal.object_generation,
+        ) {
+            Some(status)
+        } else if !matches!(
+            self.journal.state,
+            EffectJournalState::Live | EffectJournalState::Sealed
+        ) {
+            Some(TrapStatus::JournalUnavailable)
+        } else {
+            None
+        };
+        if let Some(status) = status {
+            self.set_journal_output(task, status, [0; 3])?;
+            return Ok(TrapOutcome::Resume(task));
+        }
+
+        match operation {
+            TrapOperation::InspectEffectJournal => {
+                let first = if self.journal.committed_record_count == 0 {
+                    0
+                } else {
+                    1
+                };
+                self.set_journal_output(
+                    task,
+                    TrapStatus::Ok,
+                    [
+                        first,
+                        self.journal.next_record_sequence,
+                        u64::from(self.journal.committed_record_count),
+                    ],
+                )?;
+            }
+            TrapOperation::ReadEffectRecord => {
+                match self.journal.read_triplet(input.rsi, input.rdx) {
+                    Ok(words) => self.set_journal_output(task, TrapStatus::Ok, words)?,
+                    Err(error) => {
+                        self.set_journal_output(task, Self::journal_status(error), [0; 3])?
+                    }
+                }
+            }
+            _ => return Err(RuntimeError::JournalInvariant),
+        }
+        self.validate()?;
+        Ok(TrapOutcome::Resume(task))
+    }
+
+    fn set_journal_output(
+        &mut self,
+        task: u64,
+        status: TrapStatus,
+        values: [u64; 3],
+    ) -> Result<(), RuntimeError> {
+        let context = &mut self.runtime.slot_mut(task)?.context;
+        context.rax = status as u64;
+        context.rdi = values[0];
+        context.rsi = values[1];
+        context.rdx = values[2];
+        Ok(())
+    }
+
+    const fn journal_status(error: EffectJournalError) -> TrapStatus {
+        match error {
+            EffectJournalError::Full => TrapStatus::JournalFull,
+            EffectJournalError::Unavailable | EffectJournalError::Invariant => {
+                TrapStatus::JournalUnavailable
+            }
+            EffectJournalError::InvalidRecord => TrapStatus::InvalidRecord,
+        }
+    }
+
+    pub fn begin_teardown(&mut self, task: u64) -> Result<(), RuntimeError> {
+        let before = *self;
+        if self.runtime.slot(task)?.state != TaskState::Exited {
+            return Err(RuntimeError::WrongState);
+        }
+        if self.journal.state == EffectJournalState::Live {
+            if self.runtime.broker.request_present {
+                let request = self.runtime.broker.request;
+                let terminal_epoch = self
+                    .runtime
+                    .broker
+                    .decision_epoch
+                    .checked_add(1)
+                    .ok_or(RuntimeError::JournalInvariant)?;
+                self.runtime.broker.decision_epoch = terminal_epoch;
+                let (kind, status, release_unused) = match self.runtime.broker.state {
+                    ApprovalBrokerState::Pending => {
+                        (EffectEventKind::Denied, TrapStatus::ApprovalDenied, true)
+                    }
+                    ApprovalBrokerState::Approved => {
+                        (EffectEventKind::Expired, TrapStatus::ApprovalExpired, false)
+                    }
+                    _ => return Err(RuntimeError::JournalInvariant),
+                };
+                let record = EffectRecordV1::event(
+                    kind,
+                    status,
+                    terminal_epoch,
+                    0,
+                    0,
+                    request,
+                    OBJECT_TYPE_APPROVAL_BROKER,
+                    0,
+                );
+                if self
+                    .journal
+                    .append_reserved(record, release_unused)
+                    .is_err()
+                {
+                    *self = before;
+                    return Err(RuntimeError::JournalInvariant);
+                }
+            }
+            if self.journal.seal().is_err() {
+                *self = before;
+                return Err(RuntimeError::JournalInvariant);
+            }
+        }
+        if let Err(error) = self.runtime.begin_teardown(task) {
+            *self = before;
+            return Err(error);
+        }
+        if self.validate().is_err() {
+            *self = before;
+            return Err(RuntimeError::JournalInvariant);
+        }
+        Ok(())
+    }
+
+    pub fn complete_teardown(&mut self, task: u64) -> Result<Option<u64>, RuntimeError> {
+        let before = *self;
+        let result = self.runtime.complete_teardown(task);
+        match result {
+            Ok(next) if self.validate().is_ok() => Ok(next),
+            Ok(_) => {
+                *self = before;
+                Err(RuntimeError::JournalInvariant)
+            }
+            Err(error) => {
+                *self = before;
+                Err(error)
+            }
+        }
+    }
+
+    pub fn finish_reclamation(&mut self) -> Result<(), RuntimeError> {
+        let before = *self;
+        if self
+            .runtime
+            .tasks
+            .iter()
+            .any(|task| task.state != TaskState::Dead)
+            || self.journal.state != EffectJournalState::Sealed
+            || self.journal.reserved_record_count != 0
+            || self.journal.validate().is_err()
+        {
+            return Err(RuntimeError::JournalInvariant);
+        }
+        self.journal.clear_dead();
+        if self.validate().is_err() {
+            *self = before;
+            return Err(RuntimeError::JournalInvariant);
+        }
+        Ok(())
+    }
+
+    pub fn validate(&self) -> Result<(), RuntimeError> {
+        self.runtime.validate()?;
+        self.journal
+            .validate()
+            .map_err(|_| RuntimeError::JournalInvariant)?;
+        let supervisor_journal_entries = self.runtime.tasks[0]
+            .capabilities
+            .slots
+            .iter()
+            .filter_map(|slot| slot.entry)
+            .filter(|entry| entry.object_type == OBJECT_TYPE_EFFECT_JOURNAL)
+            .count();
+        let workload_journal_entries = self.runtime.tasks[1]
+            .capabilities
+            .slots
+            .iter()
+            .filter_map(|slot| slot.entry)
+            .filter(|entry| entry.object_type == OBJECT_TYPE_EFFECT_JOURNAL)
+            .count();
+        if supervisor_journal_entries > 1 || workload_journal_entries != 0 {
+            return Err(RuntimeError::JournalInvariant);
+        }
+        for entry in self.runtime.tasks[0]
+            .capabilities
+            .slots
+            .iter()
+            .filter_map(|slot| slot.entry)
+            .filter(|entry| entry.object_type == OBJECT_TYPE_EFFECT_JOURNAL)
+        {
+            if entry.rights != CAPABILITY_RIGHT_READ_EFFECT_JOURNAL
+                || entry.object.id != EFFECT_JOURNAL_OBJECT_ID
+                || entry.object.generation != EFFECT_JOURNAL_OBJECT_GENERATION
+            {
+                return Err(RuntimeError::JournalInvariant);
+            }
+        }
+        match self.journal.state {
+            EffectJournalState::Building => return Err(RuntimeError::JournalInvariant),
+            EffectJournalState::Live => {
+                if self
+                    .runtime
+                    .tasks
+                    .iter()
+                    .all(|task| task.state == TaskState::Dead)
+                {
+                    return Err(RuntimeError::JournalInvariant);
+                }
+                let expected_reservations = match self.runtime.broker.state {
+                    ApprovalBrokerState::Pending => 2,
+                    ApprovalBrokerState::Approved => 1,
+                    _ => 0,
+                };
+                if self.journal.reserved_record_count != expected_reservations {
+                    return Err(RuntimeError::JournalInvariant);
+                }
+            }
+            EffectJournalState::Sealed => {
+                if self.journal.reserved_record_count != 0
+                    || self.runtime.broker.request_present
+                    || matches!(
+                        self.runtime.broker.state,
+                        ApprovalBrokerState::Pending | ApprovalBrokerState::Approved
+                    )
+                {
+                    return Err(RuntimeError::JournalInvariant);
+                }
+            }
+            EffectJournalState::Dead => {
+                if self
+                    .runtime
+                    .tasks
+                    .iter()
+                    .any(|task| task.state != TaskState::Dead)
+                    || supervisor_journal_entries != 0
+                {
+                    return Err(RuntimeError::JournalInvariant);
+                }
+            }
+        }
+        if self.runtime.tasks[1].state == TaskState::Dead
+            && !matches!(
+                self.journal.state,
+                EffectJournalState::Sealed | EffectJournalState::Dead
+            )
+        {
+            return Err(RuntimeError::JournalInvariant);
+        }
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -2776,6 +3850,14 @@ mod tests {
         .unwrap()
     }
 
+    fn journaled_runtime() -> JournaledRuntime {
+        JournaledRuntime::new_supervised(
+            context(1, SUPERVISOR_GENERATION, 0x3000),
+            context(2, WORKLOAD_GENERATION, 0x4000),
+        )
+        .unwrap()
+    }
+
     fn install_call(runtime: &mut Runtime, task: u64, operation: u64, a: u64, b: u64, c: u64) {
         let slot = runtime.slot_mut(task).unwrap();
         slot.context.rax = operation;
@@ -2794,6 +3876,115 @@ mod tests {
     ) -> TrapOutcome {
         install_call(runtime, task, operation as u64, a, b, c);
         runtime.handle_trap(task).unwrap()
+    }
+
+    fn install_journaled_call(
+        runtime: &mut JournaledRuntime,
+        task: u64,
+        operation: u64,
+        a: u64,
+        b: u64,
+        c: u64,
+    ) {
+        let slot = runtime.runtime.slot_mut(task).unwrap();
+        slot.context.rax = operation;
+        slot.context.rdi = a;
+        slot.context.rsi = b;
+        slot.context.rdx = c;
+    }
+
+    fn invoke_journaled(
+        runtime: &mut JournaledRuntime,
+        task: u64,
+        operation: TrapOperation,
+        a: u64,
+        b: u64,
+        c: u64,
+    ) -> TrapOutcome {
+        install_journaled_call(runtime, task, operation as u64, a, b, c);
+        runtime.handle_trap(task).unwrap()
+    }
+
+    fn start_journaled_workload(runtime: &mut JournaledRuntime) {
+        assert_eq!(Some(SENDER_TASK_ID), runtime.dispatch_next().unwrap());
+        assert_eq!(
+            TrapOutcome::Resume(SENDER_TASK_ID),
+            invoke_journaled(
+                runtime,
+                SENDER_TASK_ID,
+                TrapOperation::StartWorkload,
+                SUPERVISOR_TASK_CONTROL_HANDLE,
+                MANIFEST_ID,
+                0,
+            )
+        );
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke_journaled(runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+    }
+
+    fn submit_journaled(runtime: &mut JournaledRuntime, argument: u64) -> u64 {
+        assert_eq!(
+            TrapOutcome::Switch(SENDER_TASK_ID),
+            invoke_journaled(
+                runtime,
+                RECEIVER_TASK_ID,
+                TrapOperation::SubmitApproval,
+                WORKLOAD_APPROVAL_HANDLE,
+                APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+                argument,
+            )
+        );
+        runtime.approval_broker().request.sequence
+    }
+
+    fn decide_journaled(runtime: &mut JournaledRuntime, sequence: u64, decision: u64) {
+        assert_eq!(
+            TrapOutcome::Resume(SENDER_TASK_ID),
+            invoke_journaled(
+                runtime,
+                SENDER_TASK_ID,
+                TrapOperation::DecideApproval,
+                SUPERVISOR_DECISION_HANDLE,
+                sequence,
+                decision,
+            )
+        );
+        assert_eq!(TrapStatus::Ok as u64, runtime.context(1).unwrap().rax);
+    }
+
+    fn assert_effect_record(
+        record: EffectRecordV1,
+        record_sequence: u64,
+        decision_epoch: u64,
+        request_sequence: u64,
+        event_kind: EffectEventKind,
+        status: TrapStatus,
+        actor_task_id: u64,
+        actor_generation: u64,
+        object_type: u32,
+        rights: u64,
+    ) {
+        assert_eq!(EFFECT_RECORD_SCHEMA_VERSION, record.schema_version);
+        assert_eq!(EFFECT_RECORD_BYTE_SIZE, record.byte_size);
+        assert_eq!(event_kind as u32, record.event_kind);
+        assert_eq!(status as u32, record.status);
+        assert_eq!(record_sequence, record.record_sequence);
+        assert_eq!(decision_epoch, record.decision_epoch);
+        assert_eq!(PRINCIPAL_ID, record.principal_id);
+        assert_eq!(actor_task_id, record.actor_task_id);
+        assert_eq!(actor_generation, record.actor_task_generation);
+        assert_eq!(RECEIVER_TASK_ID, record.subject_task_id);
+        assert_eq!(WORKLOAD_GENERATION, record.subject_task_generation);
+        assert_eq!(request_sequence, record.request_sequence);
+        assert_eq!(APPROVAL_ACTION_ID_COMMIT_SYNTHETIC_VALUE, record.action_id);
+        assert_eq!(object_type, record.capability_object_type);
+        assert_eq!(0, record.reserved_zero);
+        assert_eq!(1, record.capability_object_id);
+        assert_eq!(FIXED_OBJECT_GENERATION, record.capability_object_generation);
+        assert_eq!(rights, record.capability_rights);
+        assert_eq!(0, record.trailing_reserved_zero);
     }
 
     fn dispatch_sender(runtime: &mut Runtime) {
@@ -3297,6 +4488,8 @@ mod tests {
         assert_eq!(8, TrapOperation::InspectApproval as u64);
         assert_eq!(9, TrapOperation::DecideApproval as u64);
         assert_eq!(10, TrapOperation::CommitEffect as u64);
+        assert_eq!(11, TrapOperation::InspectEffectJournal as u64);
+        assert_eq!(12, TrapOperation::ReadEffectRecord as u64);
         assert_eq!(6, TrapStatus::InvalidHandle as u64);
         assert_eq!(7, TrapStatus::WrongObject as u64);
         assert_eq!(8, TrapStatus::RightsDenied as u64);
@@ -3312,6 +4505,9 @@ mod tests {
         assert_eq!(18, TrapStatus::EffectUnavailable as u64);
         assert_eq!(19, TrapStatus::BrokerUnavailable as u64);
         assert_eq!(20, TrapStatus::AlreadyLaunched as u64);
+        assert_eq!(21, TrapStatus::JournalFull as u64);
+        assert_eq!(22, TrapStatus::JournalUnavailable as u64);
+        assert_eq!(23, TrapStatus::InvalidRecord as u64);
 
         let mut runtime = runtime();
         dispatch_sender(&mut runtime);
@@ -3324,6 +4520,8 @@ mod tests {
             ),
             (TrapOperation::Close, INITIAL_CAPABILITY_HANDLE, 1, 0),
             (TrapOperation::Close, INITIAL_CAPABILITY_HANDLE, 0, 1),
+            (TrapOperation::InspectEffectJournal, 0, 0, 0),
+            (TrapOperation::ReadEffectRecord, 0, 0, 0),
         ] {
             let before = runtime.capability_table(1).unwrap();
             invoke(&mut runtime, 1, operation, a, b, c);
@@ -4517,5 +5715,535 @@ mod tests {
         assert_eq!(0, approved.synthetic_effect().object_generation);
         assert_eq!(0, approved.capability_table(1).unwrap().live_slots);
         approved.validate().unwrap();
+    }
+
+    #[test]
+    fn journal_layout_publication_and_failure_rollback_are_exact() {
+        assert_eq!(128, size_of::<EffectRecordV1>());
+        assert_eq!(2_072, EFFECT_JOURNAL_BYTES);
+        assert_eq!(3_112, RUNTIME_METADATA_BYTES);
+        assert_eq!(5_184, JOURNALED_RUNTIME_BYTES);
+        assert_eq!(0, EFFECT_RECORD_SCHEMA_VERSION_OFFSET);
+        assert_eq!(4, EFFECT_RECORD_BYTE_SIZE_OFFSET);
+        assert_eq!(8, EFFECT_RECORD_EVENT_KIND_OFFSET);
+        assert_eq!(12, EFFECT_RECORD_STATUS_OFFSET);
+        assert_eq!(16, EFFECT_RECORD_SEQUENCE_OFFSET);
+        assert_eq!(24, EFFECT_RECORD_DECISION_EPOCH_OFFSET);
+        assert_eq!(32, EFFECT_RECORD_PRINCIPAL_ID_OFFSET);
+        assert_eq!(40, EFFECT_RECORD_ACTOR_TASK_ID_OFFSET);
+        assert_eq!(48, EFFECT_RECORD_ACTOR_GENERATION_OFFSET);
+        assert_eq!(56, EFFECT_RECORD_SUBJECT_TASK_ID_OFFSET);
+        assert_eq!(64, EFFECT_RECORD_SUBJECT_GENERATION_OFFSET);
+        assert_eq!(72, EFFECT_RECORD_REQUEST_SEQUENCE_OFFSET);
+        assert_eq!(80, EFFECT_RECORD_ACTION_ID_OFFSET);
+        assert_eq!(88, EFFECT_RECORD_OBJECT_TYPE_OFFSET);
+        assert_eq!(92, EFFECT_RECORD_RESERVED_ZERO_OFFSET);
+        assert_eq!(96, EFFECT_RECORD_OBJECT_ID_OFFSET);
+        assert_eq!(104, EFFECT_RECORD_OBJECT_GENERATION_OFFSET);
+        assert_eq!(112, EFFECT_RECORD_RIGHTS_OFFSET);
+        assert_eq!(120, EFFECT_RECORD_TRAILING_RESERVED_OFFSET);
+        assert_eq!(11, TrapOperation::InspectEffectJournal as u64);
+        assert_eq!(12, TrapOperation::ReadEffectRecord as u64);
+        assert_eq!(21, TrapStatus::JournalFull as u64);
+        assert_eq!(22, TrapStatus::JournalUnavailable as u64);
+        assert_eq!(23, TrapStatus::InvalidRecord as u64);
+        assert_eq!(0x13, SUPERVISOR_JOURNAL_HANDLE);
+
+        let runtime = journaled_runtime();
+        assert_eq!(4, runtime.capability_table(1).unwrap().live_slots);
+        assert_eq!(0, runtime.capability_table(2).unwrap().live_slots);
+        assert_eq!(
+            EffectJournalSnapshot {
+                state: EffectJournalState::Live,
+                committed_record_count: 0,
+                reserved_record_count: 0,
+                object_generation: EFFECT_JOURNAL_OBJECT_GENERATION,
+                next_record_sequence: 1,
+            },
+            runtime.effect_journal()
+        );
+        runtime.validate().unwrap();
+
+        for step in 0..=6 {
+            let mut failed = JournaledRuntime {
+                runtime: Runtime::unpublished_supervised(
+                    context(1, SUPERVISOR_GENERATION, 0x3000),
+                    context(2, WORKLOAD_GENERATION, 0x4000),
+                ),
+                journal: EffectJournalV1::building(),
+            };
+            assert_eq!(
+                Err(RuntimeError::PublicationFailure),
+                failed.publish_supervisor(Some(step))
+            );
+            assert_eq!(EffectJournalState::Dead, failed.effect_journal().state);
+            assert_eq!(TaskState::Dead, failed.state(1).unwrap());
+            assert_eq!(TaskState::Dead, failed.state(2).unwrap());
+            assert_eq!(0, failed.capability_table(1).unwrap().live_slots);
+            failed.validate().unwrap();
+        }
+    }
+
+    #[test]
+    fn journaled_reference_lifecycles_are_ordered_redacted_and_read_only() {
+        let mut runtime = journaled_runtime();
+        start_journaled_workload(&mut runtime);
+
+        let denied = submit_journaled(&mut runtime, 0x41);
+        decide_journaled(&mut runtime, denied, DECISION_DENY);
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke_journaled(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+        assert_eq!(
+            TrapStatus::ApprovalDenied as u64,
+            runtime.context(2).unwrap().rax
+        );
+
+        let expired = submit_journaled(&mut runtime, 0x42);
+        decide_journaled(&mut runtime, expired, DECISION_APPROVE);
+        decide_journaled(&mut runtime, expired, DECISION_EXPIRE);
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke_journaled(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+        assert_eq!(
+            TrapStatus::ApprovalExpired as u64,
+            runtime.context(2).unwrap().rax
+        );
+
+        let completed = submit_journaled(&mut runtime, 0x43);
+        decide_journaled(&mut runtime, completed, DECISION_APPROVE);
+        assert_eq!(
+            TrapOutcome::Resume(SENDER_TASK_ID),
+            invoke_journaled(
+                &mut runtime,
+                SENDER_TASK_ID,
+                TrapOperation::CommitEffect,
+                SUPERVISOR_EFFECT_HANDLE,
+                completed,
+                0x43,
+            )
+        );
+        assert_eq!(TrapStatus::Ok as u64, runtime.context(1).unwrap().rax);
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke_journaled(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+        assert_eq!(TrapStatus::Ok as u64, runtime.context(2).unwrap().rax);
+        assert_eq!(0x43, runtime.context(2).unwrap().rdx);
+
+        let failed = submit_journaled(&mut runtime, 0x44);
+        decide_journaled(&mut runtime, failed, DECISION_APPROVE);
+        assert_eq!(
+            TrapOutcome::Resume(SENDER_TASK_ID),
+            invoke_journaled(
+                &mut runtime,
+                SENDER_TASK_ID,
+                TrapOperation::CommitEffect,
+                SUPERVISOR_EFFECT_HANDLE,
+                failed,
+                0x44,
+            )
+        );
+        assert_eq!(
+            TrapStatus::EffectUnavailable as u64,
+            runtime.context(1).unwrap().rax
+        );
+        assert_eq!(ApprovalBrokerState::Empty, runtime.approval_broker().state);
+        assert!(!runtime.approval_broker().request_present);
+        assert_eq!(0x43, runtime.synthetic_effect().value);
+        assert_eq!(
+            TrapOutcome::Switch(RECEIVER_TASK_ID),
+            invoke_journaled(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0)
+        );
+        assert_eq!(
+            TrapStatus::EffectUnavailable as u64,
+            runtime.context(2).unwrap().rax
+        );
+        assert_eq!(0, runtime.context(2).unwrap().rdx);
+
+        assert_eq!(
+            TrapOutcome::Exit(RECEIVER_TASK_ID),
+            invoke_journaled(&mut runtime, RECEIVER_TASK_ID, TrapOperation::Exit, 0, 0, 0)
+        );
+        runtime.begin_teardown(RECEIVER_TASK_ID).unwrap();
+        assert_eq!(EffectJournalState::Sealed, runtime.effect_journal().state);
+        assert_eq!(Some(SENDER_TASK_ID), runtime.complete_teardown(2).unwrap());
+
+        assert_eq!(
+            TrapOutcome::Resume(SENDER_TASK_ID),
+            invoke_journaled(
+                &mut runtime,
+                SENDER_TASK_ID,
+                TrapOperation::InspectEffectJournal,
+                SUPERVISOR_JOURNAL_HANDLE,
+                0,
+                0,
+            )
+        );
+        let inspect = runtime.context(1).unwrap();
+        assert_eq!(TrapStatus::Ok as u64, inspect.rax);
+        assert_eq!(1, inspect.rdi);
+        assert_eq!(12, inspect.rsi);
+        assert_eq!(11, inspect.rdx);
+
+        let expected = [
+            (
+                1,
+                2,
+                1,
+                EffectEventKind::Requested,
+                TrapStatus::Ok,
+                2,
+                5,
+                3,
+                16,
+            ),
+            (
+                2,
+                3,
+                1,
+                EffectEventKind::Denied,
+                TrapStatus::ApprovalDenied,
+                1,
+                4,
+                3,
+                32,
+            ),
+            (
+                3,
+                4,
+                2,
+                EffectEventKind::Requested,
+                TrapStatus::Ok,
+                2,
+                5,
+                3,
+                16,
+            ),
+            (
+                4,
+                5,
+                2,
+                EffectEventKind::Approved,
+                TrapStatus::Ok,
+                1,
+                4,
+                3,
+                32,
+            ),
+            (
+                5,
+                6,
+                2,
+                EffectEventKind::Expired,
+                TrapStatus::ApprovalExpired,
+                1,
+                4,
+                3,
+                32,
+            ),
+            (
+                6,
+                7,
+                3,
+                EffectEventKind::Requested,
+                TrapStatus::Ok,
+                2,
+                5,
+                3,
+                16,
+            ),
+            (
+                7,
+                8,
+                3,
+                EffectEventKind::Approved,
+                TrapStatus::Ok,
+                1,
+                4,
+                3,
+                32,
+            ),
+            (
+                8,
+                9,
+                3,
+                EffectEventKind::Completed,
+                TrapStatus::Ok,
+                1,
+                4,
+                4,
+                64,
+            ),
+            (
+                9,
+                10,
+                4,
+                EffectEventKind::Requested,
+                TrapStatus::Ok,
+                2,
+                5,
+                3,
+                16,
+            ),
+            (
+                10,
+                11,
+                4,
+                EffectEventKind::Approved,
+                TrapStatus::Ok,
+                1,
+                4,
+                3,
+                32,
+            ),
+            (
+                11,
+                12,
+                4,
+                EffectEventKind::Failed,
+                TrapStatus::EffectUnavailable,
+                1,
+                4,
+                4,
+                64,
+            ),
+        ];
+        for (sequence, epoch, request, kind, status, actor, generation, object, rights) in expected
+        {
+            let record = runtime.effect_record(sequence).unwrap();
+            assert_effect_record(
+                record, sequence, epoch, request, kind, status, actor, generation, object, rights,
+            );
+            for triplet in 0..=5 {
+                assert_eq!(
+                    TrapOutcome::Resume(SENDER_TASK_ID),
+                    invoke_journaled(
+                        &mut runtime,
+                        SENDER_TASK_ID,
+                        TrapOperation::ReadEffectRecord,
+                        SUPERVISOR_JOURNAL_HANDLE,
+                        sequence,
+                        triplet,
+                    )
+                );
+                let output = runtime.context(1).unwrap();
+                assert_eq!(TrapStatus::Ok as u64, output.rax);
+                assert_eq!(record.word(triplet as usize * 3).unwrap_or(0), output.rdi);
+                assert_eq!(
+                    record.word(triplet as usize * 3 + 1).unwrap_or(0),
+                    output.rsi
+                );
+                assert_eq!(
+                    record.word(triplet as usize * 3 + 2).unwrap_or(0),
+                    output.rdx
+                );
+            }
+        }
+        assert_eq!(0, runtime.effect_journal().reserved_record_count);
+        runtime.validate().unwrap();
+
+        assert_eq!(
+            TrapOutcome::Exit(SENDER_TASK_ID),
+            invoke_journaled(&mut runtime, SENDER_TASK_ID, TrapOperation::Exit, 0, 0, 0)
+        );
+        runtime.begin_teardown(SENDER_TASK_ID).unwrap();
+        assert_eq!(None, runtime.complete_teardown(1).unwrap());
+        assert_eq!(EffectJournalState::Sealed, runtime.effect_journal().state);
+        runtime.finish_reclamation().unwrap();
+        assert_eq!(EffectJournalState::Dead, runtime.effect_journal().state);
+        runtime.validate().unwrap();
+    }
+
+    #[test]
+    fn journal_capacity_and_malformed_requests_fail_without_mutation() {
+        let mut runtime = journaled_runtime();
+        start_journaled_workload(&mut runtime);
+        let initial = runtime.effect_journal();
+        assert_eq!(
+            TrapOutcome::Resume(RECEIVER_TASK_ID),
+            invoke_journaled(
+                &mut runtime,
+                RECEIVER_TASK_ID,
+                TrapOperation::SubmitApproval,
+                0,
+                APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+                1,
+            )
+        );
+        assert_eq!(
+            TrapStatus::InvalidHandle as u64,
+            runtime.context(2).unwrap().rax
+        );
+        assert_eq!(initial, runtime.effect_journal());
+
+        for argument in 1..=7 {
+            let sequence = submit_journaled(&mut runtime, argument);
+            decide_journaled(&mut runtime, sequence, DECISION_DENY);
+            assert_eq!(
+                TrapOutcome::Switch(RECEIVER_TASK_ID),
+                invoke_journaled(&mut runtime, SENDER_TASK_ID, TrapOperation::Yield, 0, 0, 0,)
+            );
+        }
+        assert_eq!(14, runtime.effect_journal().committed_record_count);
+        let before = runtime;
+        assert_eq!(
+            TrapOutcome::Resume(RECEIVER_TASK_ID),
+            invoke_journaled(
+                &mut runtime,
+                RECEIVER_TASK_ID,
+                TrapOperation::SubmitApproval,
+                WORKLOAD_APPROVAL_HANDLE,
+                APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+                8,
+            )
+        );
+        assert_eq!(
+            TrapStatus::JournalFull as u64,
+            runtime.context(2).unwrap().rax
+        );
+        let mut expected = before;
+        expected.runtime.tasks[1].context.rax = TrapStatus::JournalFull as u64;
+        expected.runtime.tasks[1].context.rdx = 0;
+        assert_eq!(expected, runtime);
+
+        let mut journal = EffectJournalV1::building();
+        journal.publish().unwrap();
+        journal.next_record_sequence = u64::MAX - 1;
+        let record = EffectRecordV1::event(
+            EffectEventKind::Requested,
+            TrapStatus::Ok,
+            1,
+            2,
+            5,
+            ApprovalRequestV1 {
+                principal_id: 1,
+                workload_task_id: 2,
+                workload_generation: 5,
+                sequence: 1,
+                action_id: 1,
+                effect_object_id: 1,
+                effect_object_generation: 1,
+                argument: 0,
+                requested_rights: 64,
+                resulting_rights: 0,
+            },
+            OBJECT_TYPE_APPROVAL_BROKER,
+            CAPABILITY_RIGHT_SUBMIT_APPROVAL,
+        );
+        let unchanged = journal;
+        assert_eq!(
+            Err(EffectJournalError::Full),
+            journal.begin_lifecycle(record)
+        );
+        assert_eq!(unchanged, journal);
+
+        let mut epoch = journaled_runtime();
+        start_journaled_workload(&mut epoch);
+        epoch.runtime.broker.decision_epoch = u64::MAX - 2;
+        let before = epoch.effect_journal();
+        assert_eq!(
+            TrapOutcome::Resume(RECEIVER_TASK_ID),
+            invoke_journaled(
+                &mut epoch,
+                RECEIVER_TASK_ID,
+                TrapOperation::SubmitApproval,
+                WORKLOAD_APPROVAL_HANDLE,
+                APPROVAL_REQUEST_KIND_COMMIT_SYNTHETIC_VALUE,
+                9,
+            )
+        );
+        assert_eq!(
+            TrapStatus::BrokerUnavailable as u64,
+            epoch.context(2).unwrap().rax
+        );
+        assert_eq!(before, epoch.effect_journal());
+        assert_eq!(ApprovalBrokerState::Empty, epoch.approval_broker().state);
+        assert!(!epoch.approval_broker().request_present);
+        epoch.validate().unwrap();
+    }
+
+    #[test]
+    fn journal_reads_are_typed_bounded_immutable_and_zero_padded() {
+        let mut runtime = journaled_runtime();
+        start_journaled_workload(&mut runtime);
+        let sequence = submit_journaled(&mut runtime, 0x51);
+        decide_journaled(&mut runtime, sequence, DECISION_DENY);
+        let record = runtime.effect_record(1).unwrap();
+
+        for (handle, sequence, triplet, status) in [
+            (SUPERVISOR_EFFECT_HANDLE, 1, 0, TrapStatus::WrongObject),
+            (SUPERVISOR_JOURNAL_HANDLE, 0, 0, TrapStatus::InvalidRecord),
+            (SUPERVISOR_JOURNAL_HANDLE, 3, 0, TrapStatus::InvalidRecord),
+            (SUPERVISOR_JOURNAL_HANDLE, 1, 6, TrapStatus::InvalidRecord),
+        ] {
+            invoke_journaled(
+                &mut runtime,
+                SENDER_TASK_ID,
+                TrapOperation::ReadEffectRecord,
+                handle,
+                sequence,
+                triplet,
+            );
+            let output = runtime.context(1).unwrap();
+            assert_eq!(status as u64, output.rax);
+            assert_eq!(0, output.rdi);
+            assert_eq!(0, output.rsi);
+            assert_eq!(0, output.rdx);
+            assert_eq!(record, runtime.effect_record(1).unwrap());
+        }
+
+        invoke_journaled(
+            &mut runtime,
+            SENDER_TASK_ID,
+            TrapOperation::ReadEffectRecord,
+            SUPERVISOR_JOURNAL_HANDLE,
+            1,
+            5,
+        );
+        let output = runtime.context(1).unwrap();
+        assert_eq!(record.trailing_reserved_zero, output.rdi);
+        assert_eq!(0, output.rsi);
+        assert_eq!(0, output.rdx);
+        assert_eq!(record, runtime.effect_record(1).unwrap());
+    }
+
+    #[test]
+    fn teardown_records_kernel_attribution_before_seal_and_handle_close() {
+        for (decision, expected_kind, expected_status, expected_reserved) in [
+            (None, EffectEventKind::Denied, TrapStatus::ApprovalDenied, 0),
+            (
+                Some(DECISION_APPROVE),
+                EffectEventKind::Expired,
+                TrapStatus::ApprovalExpired,
+                0,
+            ),
+        ] {
+            let mut runtime = journaled_runtime();
+            start_journaled_workload(&mut runtime);
+            let sequence = submit_journaled(&mut runtime, 0x61);
+            if let Some(decision) = decision {
+                decide_journaled(&mut runtime, sequence, decision);
+            }
+            invoke_journaled(&mut runtime, SENDER_TASK_ID, TrapOperation::Exit, 0, 0, 0);
+            runtime.begin_teardown(SENDER_TASK_ID).unwrap();
+            let snapshot = runtime.effect_journal();
+            assert_eq!(EffectJournalState::Sealed, snapshot.state);
+            assert_eq!(expected_reserved, snapshot.reserved_record_count);
+            let terminal = runtime
+                .effect_record(u64::from(snapshot.committed_record_count))
+                .unwrap();
+            assert_eq!(expected_kind as u32, terminal.event_kind);
+            assert_eq!(expected_status as u32, terminal.status);
+            assert_eq!(0, terminal.actor_task_id);
+            assert_eq!(0, terminal.actor_task_generation);
+            assert_eq!(OBJECT_TYPE_APPROVAL_BROKER, terminal.capability_object_type);
+            assert_eq!(0, terminal.capability_rights);
+            assert_eq!(0, runtime.capability_table(1).unwrap().live_slots);
+            assert_eq!(expected_status as u64, runtime.context(2).unwrap().rax);
+            runtime.validate().unwrap();
+        }
     }
 }
