@@ -525,8 +525,9 @@ Acceptance: the accepted decision fixes the projected 2,072-byte journal and
 5,184-byte wrapper layouts; `Requested`, `Approved`, `Denied`, `Expired`,
 `Completed`, and `Failed` records; a supervisor-only read capability; two
 pointer-free three-register read operations; explicit capacity, sequence,
-rollback, sealing, and teardown behavior; and the exhaustive host,
-disassembly, and pinned `qemu64` one-vCPU evidence OS032 must provide.
+rollback, sealing, supervisor-capability, and kernel-generated teardown
+attribution behavior; and the exhaustive host, disassembly, and pinned
+`qemu64` one-vCPU evidence OS032 must provide.
 
 Non-scope: code, dependencies, CI changes, boot behavior, external schemas or
 protocols, dynamic objects, cross-task transfer, recursive revocation, durable
@@ -547,12 +548,13 @@ Acceptance: compile-time layout assertions and host tests prove the exact base,
 journal, wrapper, and record footprints; exhaustive state-machine tests cover
 all accepted lifecycles, redaction, resolved capability attribution, capacity,
 sequence exhaustion, immutability, typed read failures, rollback, sealing, and
-terminal-before-teardown ordering. Disassembly proves the two exact pointer-free
-read operations and preserves complete context switching. The existing pinned
-`qemu64` one-vCPU gate preserves all prior transcripts, compares the exact
-11-record deny, expire, complete, and failed-effect sequence, proves empty final
-state, and emits `MakopaOS effects v1 ok ordered-redacted` through the same
-single read-only CI job.
+terminal-before-teardown ordering, including zero-right kernel attribution for
+automatic closure. Disassembly proves the two exact pointer-free read operations
+and preserves complete context switching. The existing pinned `qemu64` one-vCPU
+gate preserves all prior transcripts, compares the exact 11-record deny,
+expire, complete, and failed-effect sequence, proves empty final state, and
+emits `MakopaOS effects v1 ok ordered-redacted` through the same single
+read-only CI job.
 
 Non-scope: external telemetry schemas or protocols, persistence, crash
 recovery, cryptographic non-repudiation, dynamic objects, cross-task transfer,

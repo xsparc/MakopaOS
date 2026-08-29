@@ -46,8 +46,9 @@ before its evidence claim can close:
 - an accepted approval or effect lifecycle either reserves room for its
   terminal record or is rejected without runtime mutation;
 - a journal record is immutable, totally ordered, attributable through resolved
-  capability identity, and free of request arguments, results, selectors,
-  credentials, pointers, and arbitrary payloads;
+  capability identity or an explicit zero-right kernel-teardown sentinel, and
+  free of request arguments, results, selectors, credentials, pointers, and
+  arbitrary payloads;
 - only the trusted supervisor's live read capability can inspect the journal;
   the workload cannot receive or mint that authority; and
 - task teardown cannot erase a required terminal event or retain task-owned
@@ -146,6 +147,7 @@ before its evidence claim can close:
 - for OS032, a separate fixed journal wrapper that leaves existing runtime
   profiles unchanged, reserves complete lifecycle capacity before submit,
   appends immutable redacted records atomically with accepted transitions,
+  distinguishes resolved supervisor authority from zero-right kernel teardown,
   exposes only typed supervisor read access, seals after terminal recording,
   and is cleared after final kernel verification;
 - typed validation at every privilege and protocol boundary;
@@ -210,10 +212,11 @@ principal, task, action, capability, epoch, and categorical outcome fields, and
 admits read access only through the trusted supervisor's typed capability.
 
 That boundary can prove deterministic ordering, payload minimization, explicit
-capacity failure, complete terminal outcomes, read-only access, and teardown
-ordering for the fixed synthetic effect. It cannot prove durable audit, crash
-recovery, tamper resistance, cryptographic non-repudiation, authenticated
-principal identity, human approval, wall-clock order, availability under
-exhaustion, external telemetry conformance, real device or network effects, or
-containment of a compromised supervisor. Those claims require separate storage,
-identity, time, exporter, executor, and recovery decisions.
+capacity failure, complete terminal outcomes, resolved-capability attribution,
+explicit kernel-teardown attribution, read-only access, and teardown ordering
+for the fixed synthetic effect. It cannot prove durable audit, crash recovery,
+tamper resistance, cryptographic non-repudiation, authenticated principal
+identity, human approval, wall-clock order, availability under exhaustion,
+external telemetry conformance, real device or network effects, or containment
+of a compromised supervisor. Those claims require separate storage, identity,
+time, exporter, executor, and recovery decisions.

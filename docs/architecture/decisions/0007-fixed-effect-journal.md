@@ -149,11 +149,21 @@ Actor and subject fields use these exact bindings:
 | Event | Actor | Subject | Capability attribution |
 | --- | --- | --- | --- |
 | `Requested` | workload | workload | `ApprovalBroker/SUBMIT_APPROVAL` |
-| `Approved`, `Denied`, `Expired` | supervisor | workload | `ApprovalBroker/DECIDE_APPROVAL` |
+| explicit `Approved`, `Denied`, `Expired` | supervisor | workload | `ApprovalBroker/DECIDE_APPROVAL` |
+| teardown `Denied`, `Expired` | kernel (`0`, `0`) | workload | `ApprovalBroker`, rights `0` |
 | `Completed`, `Failed` | supervisor | workload | `TestEffect/COMMIT_EFFECT` |
 
 `principal_id` remains the manifest's boot-local principal. It is attribution,
 not evidence of an authenticated person or remote service.
+
+Task ID and generation zero are reserved as the version-one kernel actor. A
+teardown-generated terminal record uses that pair because no task presented a
+handle: pending teardown records `Denied/ApprovalDenied`, approved teardown
+records `Expired/ApprovalExpired`, the capability object fields identify the
+broker whose lifecycle is being closed, and `capability_rights` is zero. It
+must not claim that the supervisor exercised `DECIDE_APPROVAL`. All non-teardown
+records require a nonzero actor and the exact resolved object and right shown
+above.
 
 ### Complete-lifecycle reservation
 
@@ -165,8 +175,9 @@ state.
 1. Accepted submit appends `Requested` and reserves two remaining records.
 2. Accepted approval consumes one reservation for `Approved` and retains one
    reservation for `Completed`, `Failed`, or post-approval `Expired`.
-3. A pending `Denied` or `Expired` result consumes one reservation and releases
-   the unused second reservation.
+3. A pending explicit `Denied` or `Expired` result, or a teardown-generated
+   pending `Denied`, consumes one reservation and releases the unused second
+   reservation.
 4. An approved `Completed`, `Failed`, or `Expired` result consumes the final
    reservation and closes the lifecycle.
 
@@ -231,7 +242,9 @@ Journal obligations precede reachability removal. Normal task or complete
 profile teardown must:
 
 1. append the required terminal event for a live request or approval before
-   sealing the journal or closing its supervisor handle;
+   sealing the journal or closing its supervisor handle, using the kernel actor
+   and zero-right attribution when teardown rather than a supervisor trap
+   causes the transition;
 2. resolve approval and broker references before capability tables, task
    contexts, address spaces, mappings, or frames;
 3. when no later effect can be accepted, make the journal `Sealed` while any
@@ -291,7 +304,8 @@ Host tests must demonstrate:
   request-approve-complete, and request-approve-fail record sequences;
 - nonzero monotonic record and request sequences, exact decision epochs,
   actor, subject, principal, task generation, resolved capability object and
-  right attribution, and no request argument or result payload;
+  right attribution, explicit kernel-actor and zero-right teardown attribution,
+  and no request argument or result payload;
 - three-slot admission, reservation consumption and release, the 16-slot
   boundary, non-wrapping exhaustion, atomic failure, and no missing terminal
   event;
