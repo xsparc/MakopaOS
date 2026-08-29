@@ -40,6 +40,20 @@ the fixed OS031 reference boundary:
   resource, inline argument, rights, generations, sequence, and decision epoch
   match the approved request.
 
+The planned OS032 journaled profile must additionally protect these properties
+before its evidence claim can close:
+
+- an accepted approval or effect lifecycle either reserves room for its
+  terminal record or is rejected without runtime mutation;
+- a journal record is immutable, totally ordered, attributable through resolved
+  capability identity or an explicit zero-right kernel-teardown sentinel, and
+  free of request arguments, results, selectors, credentials, pointers, and
+  arbitrary payloads;
+- only the trusted supervisor's live read capability can inspect the journal;
+  the workload cannot receive or mint that authority; and
+- task teardown cannot erase a required terminal event or retain task-owned
+  frames merely to keep the boot-local journal readable.
+
 ## Initial adversaries and failures
 
 - malformed or hostile binaries;
@@ -63,6 +77,9 @@ the fixed OS031 reference boundary:
   routes;
 - approval-slot exhaustion, parameter alteration, stale generations, replayed,
   expired, duplicated, or second-use approvals;
+- journal capacity or sequence exhaustion, incomplete lifecycle reservation,
+  unauthorized reads, malformed record selectors, and teardown before a
+  required terminal record;
 - a hostile workload attempting to mint task-control, decision, or direct
   effect authority;
 - a compromised trusted supervisor approving or committing an unsafe request;
@@ -127,6 +144,12 @@ the fixed OS031 reference boundary:
 - rollback and teardown that remove broker, approval, and effect references
   before capability entries, task and address-space references, mappings, and
   owned frames;
+- for OS032, a separate fixed journal wrapper that leaves existing runtime
+  profiles unchanged, reserves complete lifecycle capacity before submit,
+  appends immutable redacted records atomically with accepted transitions,
+  distinguishes resolved supervisor authority from zero-right kernel teardown,
+  exposes only typed supervisor read access, seals after terminal recording,
+  and is cleared after final kernel verification;
 - typed validation at every privilege and protocol boundary;
 - bounded queues and slots, explicit failure, cancellation, expiry, and replay
   protection at each implemented boundary;
@@ -178,3 +201,22 @@ network, storage, or credential effects, durable effect logging, wall-clock
 deadlines, preemptive availability, external authorization protocols, or
 arbitrary workloads. OS032 remains the separate decision and implementation
 boundary for ordered, bounded, redacted effect records.
+
+## OS032 planned evidence boundary
+
+ADR-0007 selects a separate `JournaledRuntime` wrapper for the future OS032
+proof. It does not change the implemented OS031 `Runtime` or claim that effect
+records exist today. The planned journal has 16 immutable boot-local records,
+reserves three slots before accepting a request, exposes only resolved
+principal, task, action, capability, epoch, and categorical outcome fields, and
+admits read access only through the trusted supervisor's typed capability.
+
+That boundary can prove deterministic ordering, payload minimization, explicit
+capacity failure, complete terminal outcomes, resolved-capability attribution,
+explicit kernel-teardown attribution, read-only access, and teardown ordering
+for the fixed synthetic effect. It cannot prove durable audit, crash recovery,
+tamper resistance, cryptographic non-repudiation, authenticated principal
+identity, human approval, wall-clock order, availability under exhaustion,
+external telemetry conformance, real device or network effects, or containment
+of a compromised supervisor. Those claims require separate storage, identity,
+time, exporter, executor, and recovery decisions.

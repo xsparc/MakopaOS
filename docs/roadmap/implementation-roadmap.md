@@ -62,7 +62,7 @@ provenance decisions.
 Acceptance:
 
 - architecture references identify MCP `2026-07-28`, A2A `1.0.1`, and stable
-  WASI 0.3 as the current protocol and component-study baselines;
+  WASI 0.3.1 as the current protocol and component-study baselines;
 - OS010 records monitored Rust and UEFI candidates without pinning a toolchain
   before its decision;
 - OS031, OS032, OS040, and OS051 include the applicable security and
@@ -502,18 +502,65 @@ effects, effect logging, external protocols, wall-clock deadlines, preemption,
 releases, and phase promotion. The dependency-free runtime and single read-only
 CI job remain unchanged in topology unless separately approved.
 
+### OS018 — Fixed effect-journal decision
+
+Status: Closed
+
+Depends on: OS031
+
+Record the bounded, redacted, read-only journal contract required before OS032
+adds structured evidence to accepted approval and synthetic-effect lifecycles.
+
+Decision:
+[ADR-0007](../architecture/decisions/0007-fixed-effect-journal.md) selects a
+separate `JournaledRuntime` wrapper so the 3,112-byte `Runtime`, both existing
+constructors, and all OS020 through OS031 evidence remain unchanged. The wrapper
+owns one append-only 16-record `EffectJournalV1`; complete-lifecycle reservation
+guarantees a terminal record or rejects submit without mutation. Exact
+128-byte records attribute principal, actor, subject, request, action, resolved
+capability, decision epoch, and categorical outcome while excluding arguments,
+results, handles, pointers, credentials, and arbitrary payloads.
+
+Acceptance: the accepted decision fixes the projected 2,072-byte journal and
+5,184-byte wrapper layouts; `Requested`, `Approved`, `Denied`, `Expired`,
+`Completed`, and `Failed` records; a supervisor-only read capability; two
+pointer-free three-register read operations; explicit capacity, sequence,
+rollback, sealing, supervisor-capability, and kernel-generated teardown
+attribution behavior; and the exhaustive host, disassembly, and pinned
+`qemu64` one-vCPU evidence OS032 must provide.
+
+Non-scope: code, dependencies, CI changes, boot behavior, external schemas or
+protocols, dynamic objects, cross-task transfer, recursive revocation, durable
+storage, cryptographic chains, real effects, releases, and phase promotion.
+OS032 implements the accepted contract without changing this decision.
+
 ### OS032 — Structured effect log
 
 Status: Proposed
 
-Depends on: OS031
+Depends on: OS018
 
-Record requested, approved, denied, completed, and failed effects without secret
-payloads.
+Implement ADR-0007's separate `JournaledRuntime`, fixed append-only effect
+journal, complete-lifecycle reservation, and supervisor-only read channel while
+preserving the existing `Runtime` profiles and evidence.
 
-Acceptance: records are ordered, schema-versioned, bounded, and exportable over
-a read-only channel; effect and approval records preserve principal, task, and
-capability attribution without secret payloads.
+Acceptance: compile-time layout assertions and host tests prove the exact base,
+journal, wrapper, and record footprints; exhaustive state-machine tests cover
+all accepted lifecycles, redaction, resolved capability attribution, capacity,
+sequence exhaustion, immutability, typed read failures, rollback, sealing, and
+terminal-before-teardown ordering, including zero-right kernel attribution for
+automatic closure. Disassembly proves the two exact pointer-free read operations
+and preserves complete context switching. The existing pinned `qemu64` one-vCPU
+gate preserves all prior transcripts, compares the exact 11-record deny,
+expire, complete, and failed-effect sequence, proves empty final state, and
+emits `MakopaOS effects v1 ok ordered-redacted` through the same single
+read-only CI job.
+
+Non-scope: external telemetry schemas or protocols, persistence, crash
+recovery, cryptographic non-repudiation, dynamic objects, cross-task transfer,
+recursive revocation, real effects, authenticated identities, wall-clock
+ordering, releases, and phase promotion. The dependency-free runtime and CI
+topology remain unchanged unless separately approved.
 
 ## Phase 4: Portable isolated workloads
 
@@ -523,13 +570,14 @@ Status: Proposed
 
 Depends on: OS032
 
-Evaluate a minimal component ABI against WASI 0.2 and 0.3 without committing the
-kernel ABI to either version.
+Evaluate a minimal component ABI against maintained WASI 0.2 and stable WASI
+0.3.1 without committing the kernel ABI to either version.
 
-Acceptance: a decision compares stable WASI 0.3 with the maintained WASI 0.2
-baseline across footprint, native async behavior, capability mapping, runtime
-and toolchain maturity, migration cost, and rollback. Neither version becomes a
-kernel ABI.
+Acceptance: a decision compares stable WASI 0.3.1, including its Component
+Model `map`, `implements`, and `external-id` additions, with the maintained
+WASI 0.2 baseline across footprint, native async behavior, capability mapping,
+runtime and toolchain maturity, migration cost, and rollback. Neither version
+becomes a kernel ABI.
 
 ### OS041 — Sandboxed component host
 
