@@ -3,7 +3,7 @@
 - Status: Proposed
 - Baseline: `77a3bfd2f1b35a319665a92693f4e405277e50e1`
 - Prepared: 2026-08-10
-- Reviewed: 2026-08-10
+- Reviewed: 2026-08-29
 
 ## Vision
 
@@ -119,7 +119,7 @@ Security invariants:
 
 ## Research basis
 
-The direction was reviewed against developments available on 2026-08-10:
+The direction was reviewed against developments available on 2026-08-29:
 
 - long-running software agents increase the value of explicit repository
   contracts, fast feedback, and reviewable work units;
@@ -133,8 +133,9 @@ The direction was reviewed against developments available on 2026-08-10:
 - stable Rust 1.97.1 and `uefi-rs` 0.39 are candidates for the OS010 decision,
   not dependencies or pins established by this architecture review;
 - memory-safe kernels increasingly isolate unsafe code in a small trusted core;
-- stable WASI 0.3 adds native asynchronous component semantics while preserving
-  typed host imports suitable for capability mediation;
+- stable WASI 0.3.1 retains native asynchronous component semantics and adds
+  Component Model `map`, `implements`, and `external-id` features while
+  preserving typed host imports suitable for capability mediation;
 - coding-agent benchmark audits reinforce the need for local executable
   acceptance criteria instead of relying on aggregate benchmark claims;
 - SLSA 1.2 and GitHub artifact attestations provide future provenance options,
@@ -167,7 +168,7 @@ vendor. Protocol and runtime adoption remains milestone-gated and replaceable.
 - [Rust stable release notes](https://doc.rust-lang.org/stable/releases.html)
 - [`uefi-rs` 0.39](https://docs.rs/crate/uefi/0.39.0)
 - [Asterinas framekernel overview](https://github.com/asterinas/asterinas)
-- [WASI 0.3](https://wasi.dev/releases/wasi-p3)
+- [WASI 0.3.1](https://wasi.dev/releases/wasi-p3)
 - [SLSA 1.2 specification](https://slsa.dev/spec/v1.2/)
 - [GitHub artifact attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
 - [OpenSSF Scorecard](https://github.com/ossf/scorecard)
