@@ -164,6 +164,13 @@ pub(crate) fn capability_success() -> ! {
     serial.initialize();
     let _ = serial.write_str("MakopaOS ipc v1 ok cooperative-two-task\r\n");
     let _ = serial.write_str("MakopaOS capabilities v1 ok task-local-attenuation\r\n");
+    unsafe { arch_x86_64::run_supervised_scheduler() }
+}
+
+pub(crate) fn approval_success() -> ! {
+    let mut serial = SerialPort::new(KERNEL_SERIAL);
+    serial.initialize();
+    let _ = serial.write_str("MakopaOS approval v1 ok staged-single-use\r\n");
     exit_qemu(QEMU_SUCCESS)
 }
 

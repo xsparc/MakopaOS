@@ -1,8 +1,8 @@
 # MakopaOS implementation roadmap
 
 - Status: Active; item states are recorded below
-- Baseline: `1ad7f728965ea828fdf66a25843ee5821769e14b`
-- Updated: 2026-08-28
+- Baseline: `a5f45c76f159558b3beb9ec4468295b0895815e9`
+- Updated: 2026-08-29
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
 items describe sequence, not implementation authority. Each item should ship in
@@ -461,7 +461,7 @@ decision.
 
 ### OS031 — Policy and approval boundary
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS017
 
@@ -480,6 +480,21 @@ one-vCPU gate preserves all earlier transcripts, launches the staged workload,
 proves denial, expiry, altered-argument rejection, one exact commit, replay
 rejection, and empty broker, effect, capability, task, address-space, and frame
 state before emitting `MakopaOS approval v1 ok staged-single-use`.
+
+Delivery: the dependency-free task runtime retains `Runtime::new` and every
+OS030 state-machine test while adding a separate `Runtime::new_supervised`
+profile. Fixed entries now tag `Endpoint`, `TaskControl`, `ApprovalBroker`, and
+`TestEffect` objects with object-specific rights and generations. The staged
+workload receives only the one broker-submit route in the statically registered
+184-byte manifest. One 80-byte canonical request binds the principal, task,
+sequence, action, effect, argument, rights, and generations. Host tests cover
+every manifest rejection, publication rollback step, typed-handle rejection,
+approval transition, exhaustion path, exact atomic commit, and approval-first
+teardown. The fixed runtime metadata measures 3,112 bytes and is asserted below
+the existing 64 KiB bound. Existing exception and complete-context checks now
+also inspect the supervisor and workload probe instruction sequences. The same
+single read-only CI job preserves all earlier transcripts and adds the exact
+approval terminal record under pinned `qemu64` with one vCPU.
 
 Non-scope: dynamic tasks or objects, cross-task transfer, recursive revocation,
 general policy language, credentials or human authentication, real external

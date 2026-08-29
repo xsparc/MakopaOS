@@ -28,10 +28,14 @@ a capability-oriented runtime with a small, auditable trusted core.
   both address spaces down in reverse ownership order;
 - resolves endpoint access through one fixed 16-slot capability table per task,
   with typed rights, subset-only same-task duplication, independent close,
-  generation-tagged stale rejection, and handle-first teardown; and
+  generation-tagged stale rejection, and handle-first teardown;
+- preserves that cooperative profile while separately launching a fixed staged
+  workload from one immutable default-deny manifest, mediating its declared
+  request through a bounded approval broker, and consuming one exact approval
+  to commit one synthetic in-memory effect; and
 - emits deterministic version, handoff, frame-reuse, fault-containment, and
-  cooperative-IPC and capability-attenuation records over the serial console
-  before exiting QEMU.
+  cooperative-IPC, capability-attenuation, and approval-boundary records over
+  the serial console before exiting QEMU.
 
 ## Build and verify
 

@@ -123,14 +123,14 @@ risk_refs = ["docs/security/threat-model.md#protected-properties", "docs/securit
 [[requirements]]
 id = "REQ-POLICY-APPROVAL"
 statement = "Launch delegated workloads from explicit capability manifests and require an exact, single-use approval before committing a declared high-impact effect."
-status = "planned"
+status = "implemented"
 objective_ids = ["OBJ-EXPLICIT-AUTHORITY", "OBJ-TRACEABLE-CHANGE"]
 roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os017-supervisor-launch-and-approval-decision", "docs/roadmap/implementation-roadmap.md#os031-policy-and-approval-boundary"]
 design_refs = ["docs/architecture/overview.md#security-model", "docs/architecture/decisions/0006-fixed-supervisor-and-approval-broker.md"]
-implementation_refs = []
-verification_refs = []
-validation_refs = []
-risk_refs = ["docs/security/threat-model.md#os031-planned-boundary"]
+implementation_refs = [".github/workflows/ci.yml", "crates/task-runtime/src/lib.rs", "kernel/src/arch_x86_64.rs", "kernel/src/main.rs", "scripts/verify_exception_trampolines.py", "scripts/verify_uefi_boot.py"]
+verification_refs = ["crates/task-runtime/src/lib.rs", "tests/test_verify_exception_trampolines.py", "tests/test_verify_uefi_boot.py"]
+validation_refs = ["docs/development/testing.md#repository-and-contract-gates", "docs/development/testing.md#uefi-kernel-entry-gate"]
+risk_refs = ["docs/security/threat-model.md#protected-properties", "docs/security/threat-model.md#required-controls", "docs/security/threat-model.md#os031-residual-boundary"]
 
 [[requirements]]
 id = "REQ-PORTABLE-WORKLOADS"
@@ -305,6 +305,16 @@ roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os017-supervisor-launch-
 approval_ref = "conversation:2026-08-28-approve-os017"
 acceptance_refs = ["docs/architecture/decisions/0006-fixed-supervisor-and-approval-broker.md#verification-contract-for-os031", "docs/roadmap/implementation-roadmap.md#os017-supervisor-launch-and-approval-decision"]
 evidence_refs = ["docs/architecture/decisions/0006-fixed-supervisor-and-approval-broker.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md", "docs/security/threat-model.md"]
+
+[[work_items]]
+id = "OS031-POLICY-APPROVAL-BOUNDARY"
+title = "Implement the fixed supervisor launch and approval boundary"
+status = "closed"
+requirement_ids = ["REQ-POLICY-APPROVAL", "REQ-EXPLICIT-CAPABILITIES", "REQ-TASK-SCHEDULING-IPC"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os031-policy-and-approval-boundary"]
+approval_ref = "conversation:2026-08-29-approve-os031"
+acceptance_refs = ["docs/architecture/decisions/0006-fixed-supervisor-and-approval-broker.md#verification-contract-for-os031", "docs/roadmap/implementation-roadmap.md#os031-policy-and-approval-boundary"]
+evidence_refs = [".github/workflows/ci.yml", "README.md", "crates/task-runtime/Cargo.toml", "crates/task-runtime/src/lib.rs", "docs/architecture/decisions/0006-fixed-supervisor-and-approval-broker.md", "docs/development/testing.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md", "docs/security/threat-model.md", "kernel/src/arch_x86_64.rs", "kernel/src/main.rs", "scripts/verify_dependency_features.py", "scripts/verify_exception_trampolines.py", "scripts/verify_uefi_boot.py", "tests/test_verify_dependency_features.py", "tests/test_verify_exception_trampolines.py", "tests/test_verify_uefi_boot.py"]
 
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"

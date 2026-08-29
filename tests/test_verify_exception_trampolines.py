@@ -113,6 +113,69 @@ def valid_disassembly() -> str:
   100518:\tmovl $0x3, %eax
   10051d:\tint\t$0x80
   10051f:\thlt
+0000000000100600 <makopa_supervisor_probe>:
+  100600:\tmovl $0x6, %eax
+  100605:\tmovl $0x10, %edi
+  10060a:\tint\t$0x80
+  10060c:\tcmpq $0xc, %rax
+  100610:\tmovl $0x6, %eax
+  100615:\tint\t$0x80
+  100617:\tmovl $0x0, %eax
+  10061c:\tint\t$0x80
+  10061e:\tmovl $0x8, %eax
+  100623:\tmovl $0x11, %edi
+  100628:\tmovl $0x31, %edx
+  10062d:\tint\t$0x80
+  10062f:\tmovl $0x9, %eax
+  100634:\tint\t$0x80
+  100636:\tmovl $0x0, %eax
+  10063b:\tint\t$0x80
+  10063d:\tmovl $0x8, %eax
+  100642:\tmovl $0x32, %edx
+  100647:\tint\t$0x80
+  100649:\tmovl $0x9, %eax
+  10064e:\tint\t$0x80
+  100650:\tmovl $0x9, %eax
+  100655:\tint\t$0x80
+  100657:\tmovl $0xa, %eax
+  10065c:\tmovl $0x12, %edi
+  100661:\tint\t$0x80
+  100663:\tcmpq $0xf, %rax
+  100667:\tmovl $0x0, %eax
+  10066c:\tint\t$0x80
+  10066e:\tmovl $0x8, %eax
+  100673:\tmovl $0x33, %edx
+  100678:\tint\t$0x80
+  10067a:\tmovl $0x9, %eax
+  10067f:\tint\t$0x80
+  100681:\tmovl $0xa, %eax
+  100686:\tmovl $0x34, %edx
+  10068b:\tint\t$0x80
+  10068d:\tmovl $0xa, %eax
+  100692:\tint\t$0x80
+  100694:\tmovl $0xa, %eax
+  100699:\tint\t$0x80
+  10069b:\tmovl $0x0, %eax
+  1006a0:\tint\t$0x80
+  1006a2:\tmovl $0x3, %eax
+  1006a7:\tint\t$0x80
+  1006a9:\thlt
+0000000000100700 <makopa_workload_probe>:
+  100700:\tmovl $0x7, %eax
+  100705:\tmovl $0x10, %edi
+  10070a:\tmovl $0x31, %edx
+  10070f:\tint\t$0x80
+  100711:\tcmpq $0x10, %rax
+  100715:\tmovl $0x7, %eax
+  10071a:\tmovl $0x32, %edx
+  10071f:\tint\t$0x80
+  100721:\tcmpq $0x11, %rax
+  100725:\tmovl $0x7, %eax
+  10072a:\tmovl $0x33, %edx
+  10072f:\tint\t$0x80
+  100731:\tmovl $0x3, %eax
+  100736:\tint\t$0x80
+  100738:\thlt
 '''
 
 
@@ -181,6 +244,28 @@ class VerifyExceptionTrampolinesTests(unittest.TestCase):
         self.assertIn(
             "sender probe does not require exact stale-handle status 6", errors
         )
+
+    def test_rejects_changed_approval_probe_operation_order(self) -> None:
+        disassembly = valid_disassembly().replace(
+            "  100650:\tmovl $0x9, %eax\n",
+            "  100650:\tmovl $0x8, %eax\n",
+        )
+        errors = disassembly_violations(disassembly)
+        self.assertTrue(
+            any("makopa_supervisor_probe trap operation order" in error for error in errors)
+        )
+
+    def test_rejects_missing_parameter_and_terminal_result_evidence(self) -> None:
+        disassembly = valid_disassembly().replace(
+            "  100686:\tmovl $0x34, %edx\n",
+            "  100686:\tmovl $0x35, %edx\n",
+        ).replace(
+            "  100721:\tcmpq $0x11, %rax\n",
+            "  100721:\tcmpq $0x12, %rax\n",
+        )
+        errors = disassembly_violations(disassembly)
+        self.assertIn("supervisor probe lacks approval argument evidence 0x34", errors)
+        self.assertIn("workload probe lacks exact approval result 17", errors)
 
 
 if __name__ == "__main__":
