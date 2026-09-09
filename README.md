@@ -92,3 +92,9 @@ See [the architecture](docs/architecture/overview.md),
 ## License
 
 MakopaOS is licensed under the Apache License 2.0.
+
+## Project overview
+
+For a concise explanation of this project's scope and engineering boundaries,
+see the [portfolio project profile](https://louijiecompo.com/work/makopa-os/). This repository
+and its versioned documentation remain the source of truth for implementation details.
