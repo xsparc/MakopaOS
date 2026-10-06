@@ -4,6 +4,8 @@ MakopaOS is a compact operating-systems laboratory for learning how a machine
 boots and how a small kernel can enforce explicit authority between isolated
 workloads.
 
+[Portfolio case study: architecture, evidence and current limitations](https://louijiecompo.com/work/makopa-os/).
+
 The repository preserves a 512-byte, 16-bit BIOS boot sector that prints
 `MAKOPA` and now also boots a freestanding x86-64 Rust kernel through a thin
 UEFI loader. The project grows through deterministic, reviewable slices toward
