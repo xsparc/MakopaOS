@@ -12,7 +12,7 @@ source_priority = [
 evidence_is_authoritative = false
 
 [review]
-last_reviewed = "2026-08-30"
+last_reviewed = "2026-09-03"
 review_due = "2026-09-11"
 
 [[objectives]]
@@ -149,8 +149,8 @@ id = "REQ-PORTABLE-WORKLOADS"
 statement = "Host portable components without granting undeclared system authority."
 status = "planned"
 objective_ids = ["OBJ-EXPLICIT-AUTHORITY"]
-roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"]
-design_refs = ["docs/architecture/overview.md#workload-boundary"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment", "docs/roadmap/implementation-roadmap.md#os041a-component-admission-verifier", "docs/roadmap/implementation-roadmap.md#os041b-component-memory-and-execution-substrate-decision", "docs/roadmap/implementation-roadmap.md#os041c-component-runtime-platform-experiment", "docs/roadmap/implementation-roadmap.md#os041d-console-only-component-execution"]
+design_refs = ["docs/architecture/overview.md#workload-boundary", "docs/architecture/decisions/0008-versioned-console-component-host-contract.md"]
 implementation_refs = []
 verification_refs = []
 validation_refs = []
@@ -348,6 +348,16 @@ approval_ref = "conversation:2026-08-29-approve-os032"
 acceptance_refs = ["docs/architecture/decisions/0007-fixed-effect-journal.md#verification-contract-for-os032", "docs/roadmap/implementation-roadmap.md#os032-structured-effect-log"]
 evidence_refs = [".github/workflows/ci.yml", "README.md", "crates/task-runtime/Cargo.toml", "crates/task-runtime/src/lib.rs", "docs/architecture/decisions/0006-fixed-supervisor-and-approval-broker.md", "docs/architecture/decisions/0007-fixed-effect-journal.md", "docs/development/testing.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md", "docs/security/threat-model.md", "kernel/src/arch_x86_64.rs", "kernel/src/main.rs", "scripts/verify_dependency_features.py", "scripts/verify_exception_trampolines.py", "scripts/verify_uefi_boot.py", "tests/test_verify_dependency_features.py", "tests/test_verify_exception_trampolines.py", "tests/test_verify_uefi_boot.py"]
 
+[[work_items]]
+id = "OS040-COMPONENT-HOST-CONTRACT"
+title = "Select the versioned console component-host and admission contract"
+status = "closed"
+requirement_ids = ["REQ-PORTABLE-WORKLOADS", "REQ-EXPLICIT-CAPABILITIES"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"]
+approval_ref = "conversation:2026-09-03-approve-consolidated-os040-prepublication-correction"
+acceptance_refs = ["docs/architecture/decisions/0008-versioned-console-component-host-contract.md#verification-contract", "docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"]
+evidence_refs = ["docs/architecture/decisions/0008-versioned-console-component-host-contract.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
+
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
 finding = "MCP 2026-07-28 and A2A 1.0.1 are the current stable study baselines for replaceable user-space protocol gateways."
@@ -360,13 +370,33 @@ decision_ref = "docs/roadmap/implementation-roadmap.md#os051-protocol-adapter-st
 
 [[research_decisions]]
 id = "RSH-WASI-BASELINE-2026Q3"
-finding = "WASI 0.3.1 was released on 2026-08-11, retaining native asynchronous component semantics and adding Component Model map, implements, and external-id features; it should be compared with the maintained 0.2 baseline."
+finding = "WASI 0.3.1 is the current stable release with native asynchronous component semantics plus Component Model map, implements, and external-id features; stable WASI 0.2.12 is the exact current patch on the superseded, broadly supported comparison line behind the MakopaOS-owned user-space contract."
 disposition = "adopted"
-source_urls = ["https://wasi.dev/releases/wasi-p3"]
+source_urls = ["https://wasi.dev/releases", "https://wasi.dev/releases/wasi-p2", "https://wasi.dev/releases/wasi-p3", "https://github.com/WebAssembly/WASI/releases/tag/v0.2.12", "https://github.com/WebAssembly/WASI/releases/tag/v0.3.1"]
 observed_on = "2026-08-29"
-reviewed_on = "2026-08-29"
+reviewed_on = "2026-08-30"
 review_due = "2026-09-29"
-decision_ref = "docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"
+decision_ref = "docs/architecture/decisions/0008-versioned-console-component-host-contract.md#wasi-profile-comparison"
+
+[[research_decisions]]
+id = "RSH-OS040-COMPONENT-ADMISSION-2026Q3"
+finding = "Profile-zero admission selects WebAssembly 1.0 plus the base Component Model. Fixture production pins Rust 1.97.1, wasm32v1-none, and the exact published wit-bindgen 0.61.1 package; uses macros only; preserves deterministic component-type metadata while disabling custom-section link helpers, semver import merging, LTO, and linker-plugin LTO; and prohibits adapters, libraries, binding overrides, and import remapping. Because wit-bindgen 0.61.1 emits legacy core names, compatibility is confined to componentization of the exact verified producer output; supplied WIT and final-component identities reject legacy aliases and parallel names. The only allocation machinery permitted in the fixture is the exact pinned realloc scaffold, its versioned wrapper, and a fixture-local trap-only allocation sentinel. Link, call-graph, and disassembly evidence must prove zero memory.grow and no task-path reachability to realloc, allocation, or panic code. The isolated offline build binds exact source-tree, registry-package, binary-inventory, Cargo, rustc, LLD, link-extraction, section, symbol, and target-feature evidence. Independent admission pins the wasmparser, wit-component, and wit-parser 0.258.0 family; enables only the required wasmparser compile-time features; applies exact runtime masks; independently validates the final bytes; and requires byte-equal fixed semantic graphs from raw imports and exports, decoded metadata, and in-memory parsed supplied WIT. It rejects semver normalization, legacy or parallel final identities, implements, version_suffix, external_id, and all unselected Component Model extensions. Fixed-width little-endian records bind exact SHA-256 digests and a verifier-only Ed25519 message; the repository holds no signer or private seed. Decoder and compiler workers use a versioned READY protocol, bounded pipes and resource limits, fail closed where containment is unavailable, and cannot publish partial results. Wasmtime 48.0.1 remains a compile-only P0/P2 measurement input with only component-model and cranelift enabled; P3 adds component-model-async in a separate build. Neither worker instantiates or executes a component, and Wasmtime's embedded 0.254.0 parser is differential evidence only. Admission performs complete import enumeration and exact allowlisting of the console import and task export; the 65536-byte profile-zero WIT limit is distinct from the 131072-byte non-admission P2 and P3 study envelopes."
+disposition = "adopted"
+source_urls = ["https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html", "https://doc.rust-lang.org/rustc/codegen-options/", "https://doc.rust-lang.org/rustc/remap-source-paths.html", "https://github.com/rust-lang/rust/issues/145491", "https://doc.rust-lang.org/cargo/reference/config.html", "https://doc.rust-lang.org/cargo/reference/build-scripts.html", "https://doc.rust-lang.org/cargo/reference/registry-index.html", "https://github.com/bytecodealliance/wit-bindgen/releases/tag/v0.61.1", "https://github.com/bytecodealliance/wit-bindgen/blob/v0.61.1/crates/guest-rust/build.rs", "https://github.com/bytecodealliance/wit-bindgen/blob/v0.61.1/crates/guest-rust/src/rt/mod.rs", "https://github.com/bytecodealliance/wit-bindgen/blob/v0.61.1/crates/rust/src/lib.rs", "https://docs.rs/crate/wit-bindgen-rust/0.61.1/source/src/interface.rs", "https://docs.rs/crate/wit-bindgen/0.61.1/source/src/rt/wit_bindgen_cabi_realloc.rs", "https://github.com/bytecodealliance/wit-bindgen/tree/v0.61.1/tests/runtime/rust/disable-custom-section-link-helpers", "https://docs.rs/crate/wit-bindgen/0.61.1/features", "https://docs.rs/wit-bindgen/0.61.1/wit_bindgen/macro.generate.html", "https://docs.rs/crate/wasmparser/0.258.0/features", "https://docs.rs/wasmparser/0.258.0/wasmparser/struct.WasmFeatures.html", "https://docs.rs/wasmparser/0.258.0/wasmparser/struct.Validator.html", "https://docs.rs/wit-component/0.258.0/wit_component/struct.ComponentEncoder.html#method.reject_legacy_names", "https://docs.rs/wit-component/0.258.0/wit_component/fn.decode.html", "https://docs.rs/wit-component/0.258.0/wit_component/metadata/fn.encode.html", "https://docs.rs/wit-parser/0.258.0/wit_parser/struct.SourceMap.html", "https://docs.rs/wit-parser/0.258.0/wit_parser/struct.Resolve.html", "https://github.com/WebAssembly/component-model/pull/378", "https://github.com/bytecodealliance/wasm-tools/issues/2506", "https://docs.rs/crate/wasmtime/48.0.1", "https://github.com/bytecodealliance/wasmtime/releases/tag/v48.0.1", "https://docs.wasmtime.dev/stability-release.html", "https://github.com/bytecodealliance/wasm-tools/releases/tag/v1.254.0", "https://github.com/bytecodealliance/wasm-tools/releases/tag/v1.258.0", "https://docs.rs/crate/ed25519-dalek/3.0.0", "https://docs.rs/ed25519-dalek/3.0.0/ed25519_dalek/struct.VerifyingKey.html#method.verify_strict", "https://docs.rs/crate/sha2/0.11.0", "https://www.rfc-editor.org/rfc/rfc8032.html", "https://lld.llvm.org/WebAssembly.html", "https://github.com/llvm/llvm-project/blob/main/lld/wasm/Options.td", "https://github.com/llvm/llvm-project/blob/main/lld/wasm/Driver.cpp", "https://docs.wasmtime.dev/stability-platform-support.html", "https://docs.wasmtime.dev/examples-minimal.html", "https://docs.wasmtime.dev/examples-pre-compiling-wasm.html", "https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-852m-cvvp-9p4w", "https://slsa.dev/spec/v1.2/verifying-artifacts"]
+observed_on = "2026-08-30"
+reviewed_on = "2026-09-03"
+review_due = "2026-09-30"
+decision_ref = "docs/architecture/decisions/0008-versioned-console-component-host-contract.md#offline-inspection-policy"
+
+[[research_decisions]]
+id = "RSH-OS040-SOURCE-MANIFEST-2026Q3"
+finding = "BuildEvidenceV1 retains its fixed 256-byte layout and the admission signature retains its exact 318-byte message while source-revision kind 1 becomes a bounded canonical MakopaOS source manifest. The signed manifest fixes the repository and subtree, carries the repository's Git SHA-1 tree object ID only as a locator, and independently binds every accepted regular-file path, mode, byte length, and content with SHA-256. Trusted staging reconstructs the complete inventory from committed Git objects at an explicit expected revision, reads back a fresh no-follow staging root, and excludes working-tree, .git, hook, configuration, untracked, modified, and persisted-credential content. A matching SHA-1 locator never overrides a source-manifest or per-file SHA-256 mismatch."
+disposition = "adopted"
+source_urls = ["https://git-scm.com/docs/hash-function-transition.html", "https://git-scm.com/docs/git-ls-tree", "https://git-scm.com/docs/git-cat-file", "https://git-scm.com/docs/gitdatamodel.html", "https://slsa.dev/spec/v1.2/source-requirements", "https://github.com/in-toto/attestation/blob/main/spec/v1/digest_set.md"]
+observed_on = "2026-09-02"
+reviewed_on = "2026-09-02"
+review_due = "2026-09-30"
+decision_ref = "docs/architecture/decisions/0008-versioned-console-component-host-contract.md#build-evidence"
 
 [[research_decisions]]
 id = "RSH-AGENT-SECURITY-2026Q3"
