@@ -1,0 +1,16 @@
+[workspace]
+members = ["admission"]
+resolver = "2"
+
+[workspace.package]
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.97.1"
+version = "0.1.0"
+
+[profile.dev]
+panic = "abort"
+[profile.release]
+codegen-units = 1
+lto = false
+panic = "abort"

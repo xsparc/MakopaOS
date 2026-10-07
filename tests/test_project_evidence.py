@@ -23,7 +23,9 @@ class ProjectEvidenceTests(unittest.TestCase):
         shutil.copytree(
             ROOT,
             self.repository,
-            ignore=shutil.ignore_patterns(".git", "__pycache__", "*.pyc", "boot.bin"),
+            ignore=shutil.ignore_patterns(
+                ".git", "__pycache__", "*.pyc", "boot.bin", "build", "target"
+            ),
         )
         subprocess.run(
             ["git", "init", "--quiet", str(self.repository)],
@@ -153,9 +155,10 @@ class ProjectEvidenceTests(unittest.TestCase):
         self.assertIn("traceability.unindexed-decision", self.finding_codes())
 
     def test_reports_stale_review(self) -> None:
-        result = check_project_evidence(self.repository, as_of=date(2026, 9, 12))
+        stale_date = date(9999, 12, 31)
+        result = check_project_evidence(self.repository, as_of=stale_date)
         self.assertEqual("warn", result.status)
-        self.assertIn("review.overdue", self.finding_codes(as_of=date(2026, 9, 12)))
+        self.assertIn("review.overdue", self.finding_codes(as_of=stale_date))
 
     def test_strict_mode_rejects_stale_review(self) -> None:
         stdout = io.StringIO()
@@ -165,7 +168,7 @@ class ProjectEvidenceTests(unittest.TestCase):
                     "--repository-root",
                     str(self.repository),
                     "--as-of",
-                    "2026-09-12",
+                    "9999-12-31",
                     "--strict",
                 ]
             )

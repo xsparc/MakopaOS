@@ -35,7 +35,10 @@ a capability-oriented runtime with a small, auditable trusted core.
   to commit one synthetic in-memory effect;
 - preserves both earlier profiles while separately recording accepted request,
   decision, expiry, completion, and failure transitions in a fixed 16-record
-  journal readable only through the supervisor's typed capability; and
+  journal readable only through the supervisor's typed capability;
+- provides a separate offline host precheck for fixed component-admission,
+  execution-profile, build-evidence, signature, source-inventory, WIT, and raw
+  Component Model surface contracts without changing the target runtime; and
 - emits deterministic version, handoff, frame-reuse, fault-containment, and
   cooperative-IPC, capability-attenuation, approval-boundary, and effect-journal
   records over the serial console before exiting QEMU.
@@ -60,6 +63,8 @@ cargo +1.97.1 test --locked \
   -p makopa-frame-allocator \
   -p makopa-kernel-image \
   -p makopa-task-runtime
+cargo +1.97.1 test --locked --offline \
+  --manifest-path tools/component-admission/Cargo.toml
 python scripts/build_uefi.py
 python scripts/verify_uefi_boot.py \
   --ovmf-code /usr/share/OVMF/OVMF_CODE_4M.fd \

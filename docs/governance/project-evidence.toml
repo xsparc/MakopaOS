@@ -12,8 +12,8 @@ source_priority = [
 evidence_is_authoritative = false
 
 [review]
-last_reviewed = "2026-08-30"
-review_due = "2026-09-11"
+last_reviewed = "2026-10-07"
+review_due = "2026-11-07"
 
 [[objectives]]
 id = "OBJ-BOOT-REAL"
@@ -149,12 +149,12 @@ id = "REQ-PORTABLE-WORKLOADS"
 statement = "Host portable components without granting undeclared system authority."
 status = "planned"
 objective_ids = ["OBJ-EXPLICIT-AUTHORITY"]
-roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"]
-design_refs = ["docs/architecture/overview.md#workload-boundary"]
-implementation_refs = []
-verification_refs = []
-validation_refs = []
-risk_refs = []
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment", "docs/roadmap/implementation-roadmap.md#os041a-component-admission-verifier", "docs/roadmap/implementation-roadmap.md#os041b-component-memory-and-execution-substrate-decision", "docs/roadmap/implementation-roadmap.md#os041c-component-runtime-platform-experiment", "docs/roadmap/implementation-roadmap.md#os041d-console-only-component-execution"]
+design_refs = ["docs/architecture/overview.md#workload-boundary", "docs/architecture/decisions/0008-versioned-console-component-host-contract.md"]
+implementation_refs = [".github/workflows/ci.yml", "tools/component-admission/Cargo.lock", "tools/component-admission/Cargo.toml", "tools/component-admission/admission/Cargo.toml", "tools/component-admission/admission/src/lib.rs", "tools/component-admission/admission/src/main.rs", "tools/component-admission/admission/wit/console-workload.wit"]
+verification_refs = ["tools/component-admission/admission/src/lib.rs"]
+validation_refs = ["docs/development/component-admission.md", "docs/development/testing.md#repository-and-contract-gates"]
+risk_refs = ["docs/security/threat-model.md#os041a-current-residual-boundary"]
 
 [[requirements]]
 id = "REQ-PROTOCOL-GATEWAYS"
@@ -348,25 +348,65 @@ approval_ref = "conversation:2026-08-29-approve-os032"
 acceptance_refs = ["docs/architecture/decisions/0007-fixed-effect-journal.md#verification-contract-for-os032", "docs/roadmap/implementation-roadmap.md#os032-structured-effect-log"]
 evidence_refs = [".github/workflows/ci.yml", "README.md", "crates/task-runtime/Cargo.toml", "crates/task-runtime/src/lib.rs", "docs/architecture/decisions/0006-fixed-supervisor-and-approval-broker.md", "docs/architecture/decisions/0007-fixed-effect-journal.md", "docs/development/testing.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md", "docs/security/threat-model.md", "kernel/src/arch_x86_64.rs", "kernel/src/main.rs", "scripts/verify_dependency_features.py", "scripts/verify_exception_trampolines.py", "scripts/verify_uefi_boot.py", "tests/test_verify_dependency_features.py", "tests/test_verify_exception_trampolines.py", "tests/test_verify_uefi_boot.py"]
 
+[[work_items]]
+id = "OS040-COMPONENT-HOST-CONTRACT"
+title = "Select the versioned console component-host and admission contract"
+status = "closed"
+requirement_ids = ["REQ-PORTABLE-WORKLOADS", "REQ-EXPLICIT-CAPABILITIES"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"]
+approval_ref = "conversation:2026-09-03-approve-consolidated-os040-prepublication-correction"
+acceptance_refs = ["docs/architecture/decisions/0008-versioned-console-component-host-contract.md#verification-contract", "docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"]
+evidence_refs = ["docs/architecture/decisions/0008-versioned-console-component-host-contract.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md"]
+
+[[work_items]]
+id = "OS041A-COMPONENT-ADMISSION-VERIFIER"
+title = "Implement the host-side component admission verifier"
+status = "in-progress"
+requirement_ids = ["REQ-PORTABLE-WORKLOADS", "REQ-EXPLICIT-CAPABILITIES"]
+roadmap_refs = ["docs/roadmap/implementation-roadmap.md#os041a-component-admission-verifier"]
+approval_ref = "conversation:2026-10-07-approve-ten-component-admission-features"
+acceptance_refs = ["docs/architecture/decisions/0008-versioned-console-component-host-contract.md#verification-contract", "docs/roadmap/implementation-roadmap.md#os041a-component-admission-verifier"]
+evidence_refs = [".github/workflows/ci.yml", "README.md", "docs/architecture/decisions/0008-versioned-console-component-host-contract.md", "docs/development/component-admission.md", "docs/development/testing.md", "docs/governance/project-evidence.toml", "docs/roadmap/implementation-roadmap.md", "docs/security/threat-model.md", "tools/component-admission/Cargo.lock", "tools/component-admission/Cargo.toml", "tools/component-admission/admission/Cargo.toml", "tools/component-admission/admission/src/lib.rs", "tools/component-admission/admission/src/main.rs", "tools/component-admission/admission/wit/console-workload.wit"]
+
 [[research_decisions]]
 id = "RSH-PROTOCOL-BASELINE-2026Q3"
 finding = "MCP 2026-07-28 and A2A 1.0.1 are the current stable study baselines for replaceable user-space protocol gateways."
 disposition = "adopted"
 source_urls = ["https://blog.modelcontextprotocol.io/posts/2026-07-28/", "https://github.com/a2aproject/A2A/releases/tag/v1.0.1"]
 observed_on = "2026-08-10"
-reviewed_on = "2026-08-10"
-review_due = "2026-09-10"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os051-protocol-adapter-study"
 
 [[research_decisions]]
 id = "RSH-WASI-BASELINE-2026Q3"
-finding = "WASI 0.3.1 was released on 2026-08-11, retaining native asynchronous component semantics and adding Component Model map, implements, and external-id features; it should be compared with the maintained 0.2 baseline."
+finding = "WASI 0.3.1 is the current stable release with native asynchronous component semantics plus Component Model map, implements, and external-id features; stable WASI 0.2.12 is the exact current patch on the superseded, broadly supported comparison line behind the MakopaOS-owned user-space contract."
 disposition = "adopted"
-source_urls = ["https://wasi.dev/releases/wasi-p3"]
+source_urls = ["https://wasi.dev/releases", "https://wasi.dev/releases/wasi-p2", "https://wasi.dev/releases/wasi-p3", "https://github.com/WebAssembly/WASI/releases/tag/v0.2.12", "https://github.com/WebAssembly/WASI/releases/tag/v0.3.1"]
 observed_on = "2026-08-29"
-reviewed_on = "2026-08-29"
-review_due = "2026-09-29"
-decision_ref = "docs/roadmap/implementation-roadmap.md#os040-component-abi-experiment"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
+decision_ref = "docs/architecture/decisions/0008-versioned-console-component-host-contract.md#wasi-profile-comparison"
+
+[[research_decisions]]
+id = "RSH-OS040-COMPONENT-ADMISSION-2026Q3"
+finding = "Profile-zero admission selects WebAssembly 1.0 plus the base Component Model. Fixture production pins Rust 1.97.1, wasm32v1-none, and the exact published wit-bindgen 0.61.1 package; uses macros only; preserves deterministic component-type metadata while disabling custom-section link helpers, semver import merging, LTO, and linker-plugin LTO; and prohibits adapters, libraries, binding overrides, and import remapping. Because wit-bindgen 0.61.1 emits legacy core names, compatibility is confined to componentization of the exact verified producer output; supplied WIT and final-component identities reject legacy aliases and parallel names. The only allocation machinery permitted in the fixture is the exact pinned realloc scaffold, its versioned wrapper, and a fixture-local trap-only allocation sentinel. Link, call-graph, and disassembly evidence must prove zero memory.grow and no task-path reachability to realloc, allocation, or panic code. The isolated offline build binds exact source-tree, registry-package, binary-inventory, Cargo, rustc, LLD, link-extraction, section, symbol, and target-feature evidence. Independent admission pins the wasmparser, wit-component, and wit-parser 0.258.0 family; enables only the required wasmparser compile-time features; applies exact runtime masks; independently validates the final bytes; and requires byte-equal fixed semantic graphs from raw imports and exports, decoded metadata, and in-memory parsed supplied WIT. It rejects semver normalization, legacy or parallel final identities, implements, version_suffix, external_id, and all unselected Component Model extensions. Fixed-width little-endian records bind exact SHA-256 digests and a verifier-only Ed25519 message; the repository holds no signer or private seed. Decoder and compiler workers use a versioned READY protocol, bounded pipes and resource limits, fail closed where containment is unavailable, and cannot publish partial results. Wasmtime 48.0.1 remains a compile-only P0/P2 measurement input with only component-model and cranelift enabled; P3 adds component-model-async in a separate build. Neither worker instantiates or executes a component, and Wasmtime's embedded 0.254.0 parser is differential evidence only. Admission performs complete import enumeration and exact allowlisting of the console import and task export; the 65536-byte profile-zero WIT limit is distinct from the 131072-byte non-admission P2 and P3 study envelopes."
+disposition = "adopted"
+source_urls = ["https://doc.rust-lang.org/rustc/platform-support/wasm32v1-none.html", "https://doc.rust-lang.org/rustc/codegen-options/", "https://doc.rust-lang.org/rustc/remap-source-paths.html", "https://github.com/rust-lang/rust/issues/145491", "https://doc.rust-lang.org/cargo/reference/config.html", "https://doc.rust-lang.org/cargo/reference/build-scripts.html", "https://doc.rust-lang.org/cargo/reference/registry-index.html", "https://github.com/bytecodealliance/wit-bindgen/releases/tag/v0.61.1", "https://github.com/bytecodealliance/wit-bindgen/blob/v0.61.1/crates/guest-rust/build.rs", "https://github.com/bytecodealliance/wit-bindgen/blob/v0.61.1/crates/guest-rust/src/rt/mod.rs", "https://github.com/bytecodealliance/wit-bindgen/blob/v0.61.1/crates/rust/src/lib.rs", "https://docs.rs/crate/wit-bindgen-rust/0.61.1/source/src/interface.rs", "https://docs.rs/crate/wit-bindgen/0.61.1/source/src/rt/wit_bindgen_cabi_realloc.rs", "https://github.com/bytecodealliance/wit-bindgen/tree/v0.61.1/tests/runtime/rust/disable-custom-section-link-helpers", "https://docs.rs/crate/wit-bindgen/0.61.1/features", "https://docs.rs/wit-bindgen/0.61.1/wit_bindgen/macro.generate.html", "https://docs.rs/crate/wasmparser/0.258.0/features", "https://docs.rs/wasmparser/0.258.0/wasmparser/struct.WasmFeatures.html", "https://docs.rs/wasmparser/0.258.0/wasmparser/struct.Validator.html", "https://docs.rs/wit-component/0.258.0/wit_component/struct.ComponentEncoder.html#method.reject_legacy_names", "https://docs.rs/wit-component/0.258.0/wit_component/fn.decode.html", "https://docs.rs/wit-component/0.258.0/wit_component/metadata/fn.encode.html", "https://docs.rs/wit-parser/0.258.0/wit_parser/struct.SourceMap.html", "https://docs.rs/wit-parser/0.258.0/wit_parser/struct.Resolve.html", "https://github.com/WebAssembly/component-model/pull/378", "https://github.com/bytecodealliance/wasm-tools/issues/2506", "https://docs.rs/crate/wasmtime/48.0.1", "https://github.com/bytecodealliance/wasmtime/releases/tag/v48.0.1", "https://docs.wasmtime.dev/stability-release.html", "https://github.com/bytecodealliance/wasm-tools/releases/tag/v1.254.0", "https://github.com/bytecodealliance/wasm-tools/releases/tag/v1.258.0", "https://docs.rs/crate/ed25519-dalek/3.0.0", "https://docs.rs/ed25519-dalek/3.0.0/ed25519_dalek/struct.VerifyingKey.html#method.verify_strict", "https://docs.rs/crate/sha2/0.11.0", "https://www.rfc-editor.org/rfc/rfc8032.html", "https://lld.llvm.org/WebAssembly.html", "https://github.com/llvm/llvm-project/blob/main/lld/wasm/Options.td", "https://github.com/llvm/llvm-project/blob/main/lld/wasm/Driver.cpp", "https://docs.wasmtime.dev/stability-platform-support.html", "https://docs.wasmtime.dev/examples-minimal.html", "https://docs.wasmtime.dev/examples-pre-compiling-wasm.html", "https://github.com/bytecodealliance/wasmtime/security/advisories/GHSA-852m-cvvp-9p4w", "https://slsa.dev/spec/v1.2/verifying-artifacts"]
+observed_on = "2026-08-30"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
+decision_ref = "docs/architecture/decisions/0008-versioned-console-component-host-contract.md#offline-inspection-policy"
+
+[[research_decisions]]
+id = "RSH-OS040-SOURCE-MANIFEST-2026Q3"
+finding = "BuildEvidenceV1 retains its fixed 256-byte layout and the admission signature retains its exact 318-byte message while source-revision kind 1 becomes a bounded canonical MakopaOS source manifest. The signed manifest fixes the repository and subtree, carries the repository's Git SHA-1 tree object ID only as a locator, and independently binds every accepted regular-file path, mode, byte length, and content with SHA-256. Trusted staging reconstructs the complete inventory from committed Git objects at an explicit expected revision, reads back a fresh no-follow staging root, and excludes working-tree, .git, hook, configuration, untracked, modified, and persisted-credential content. A matching SHA-1 locator never overrides a source-manifest or per-file SHA-256 mismatch."
+disposition = "adopted"
+source_urls = ["https://git-scm.com/docs/hash-function-transition.html", "https://git-scm.com/docs/git-ls-tree", "https://git-scm.com/docs/git-cat-file", "https://git-scm.com/docs/gitdatamodel.html", "https://slsa.dev/spec/v1.2/source-requirements", "https://github.com/in-toto/attestation/blob/main/spec/v1/digest_set.md"]
+observed_on = "2026-09-02"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
+decision_ref = "docs/architecture/decisions/0008-versioned-console-component-host-contract.md#build-evidence"
 
 [[research_decisions]]
 id = "RSH-AGENT-SECURITY-2026Q3"
@@ -374,8 +414,8 @@ finding = "Current agent-security guidance reinforces scoped identity, delegated
 disposition = "adopted"
 source_urls = ["https://www.nist.gov/artificial-intelligence/ai-agent-standards-initiative", "https://www.nccoe.nist.gov/sites/default/files/2026-02/accelerating-the-adoption-of-software-and-ai-agent-identity-and-authorization-concept-paper.pdf", "https://www.nist.gov/blogs/caisi-research-blog/insights-ai-agent-security-large-scale-red-teaming-competition", "https://github.blog/ai-and-ml/generative-ai/under-the-hood-security-architecture-of-github-agentic-workflows/"]
 observed_on = "2026-08-10"
-reviewed_on = "2026-08-10"
-review_due = "2026-09-10"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/overview.md#security-model"
 
 [[research_decisions]]
@@ -384,8 +424,8 @@ finding = "Coding benchmark defects make repository-native executable acceptance
 disposition = "adopted"
 source_urls = ["https://openai.com/index/separating-signal-from-noise-coding-evaluations/"]
 observed_on = "2026-08-10"
-reviewed_on = "2026-08-10"
-review_due = "2026-09-10"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/overview.md#product-principles"
 
 [[research_decisions]]
@@ -394,8 +434,8 @@ finding = "Rust 1.97.1, uefi 0.39.0, UEFI 2.11, Rust's UEFI and freestanding x86
 disposition = "adopted"
 source_urls = ["https://doc.rust-lang.org/stable/releases.html#version-1971-2026-07-16", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-uefi.html", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html", "https://docs.rs/crate/uefi/0.39.0", "https://uefi.org/specs/UEFI/2.11/", "https://snapshot.ubuntu.com/"]
 observed_on = "2026-08-10"
-reviewed_on = "2026-08-10"
-review_due = "2026-09-10"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md"
 
 [[research_decisions]]
@@ -404,8 +444,8 @@ finding = "rust-osdev bootloader 0.11.17 is not selected for the initial path be
 disposition = "rejected"
 source_urls = ["https://github.com/rust-osdev/bootloader", "https://github.com/rust-osdev/bootloader/releases/tag/v0.11.17"]
 observed_on = "2026-08-10"
-reviewed_on = "2026-08-10"
-review_due = "2026-09-10"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/decisions/0001-uefi-loader-and-boot-handoff.md"
 
 [[research_decisions]]
@@ -414,8 +454,8 @@ finding = "uefi 0.39 invalidates boot-services protocols and its global allocato
 disposition = "adopted"
 source_urls = ["https://docs.rs/uefi/0.39.0/uefi/boot/fn.exit_boot_services.html"]
 observed_on = "2026-08-11"
-reviewed_on = "2026-08-11"
-review_due = "2026-09-11"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"
 
 [[research_decisions]]
@@ -424,8 +464,8 @@ finding = "QEMU read-only virtual FAT directories provide an image-tool-free ESP
 disposition = "adopted"
 source_urls = ["https://www.qemu.org/docs/master/system/images.html#virtual-fat-disk-images"]
 observed_on = "2026-08-11"
-reviewed_on = "2026-08-11"
-review_due = "2026-09-11"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"
 
 [[research_decisions]]
@@ -434,8 +474,8 @@ finding = "cargo-audit 0.22.2 is the pinned OS011 scanner for checking the commi
 disposition = "adopted"
 source_urls = ["https://github.com/rustsec/rustsec/releases/tag/cargo-audit%2Fv0.22.2"]
 observed_on = "2026-08-11"
-reviewed_on = "2026-08-11"
-review_due = "2026-09-11"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os011-x86-64-kernel-entry"
 
 [[research_decisions]]
@@ -444,8 +484,8 @@ finding = "The final MemoryMapOwned returned by uefi 0.39 after ExitBootServices
 disposition = "adopted"
 source_urls = ["https://docs.rs/uefi/0.39.0/uefi/boot/fn.exit_boot_services.html", "https://docs.rs/uefi/0.39.0/uefi/mem/memory_map/struct.MemoryMapOwned.html", "https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html#efi-boot-services-getmemorymap"]
 observed_on = "2026-08-11"
-reviewed_on = "2026-08-11"
-review_due = "2026-09-11"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"
 
 [[research_decisions]]
@@ -454,8 +494,8 @@ finding = "UEFI memory-type ownership and early allocator tradeoffs support copy
 disposition = "adopted"
 source_urls = ["https://uefi.org/specs/UEFI/2.11/07_Services_Boot_Services.html#efi-boot-services-getmemorymap", "https://cdn.kernel.org/doc/html/latest/mm/physical_memory.html"]
 observed_on = "2026-08-11"
-reviewed_on = "2026-08-11"
-review_due = "2026-09-11"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/decisions/0002-frame-ownership-and-early-allocation.md"
 
 [[research_decisions]]
@@ -464,8 +504,8 @@ finding = "Rust 2024 rejects references to static mut, so OS020 uses a narrow im
 disposition = "adopted"
 source_urls = ["https://doc.rust-lang.org/nightly/edition-guide/rust-2024/static-mut-references.html", "https://doc.rust-lang.org/core/cell/struct.UnsafeCell.html", "https://model-checking.github.io/kani/rust-feature-support.html", "https://github.com/model-checking/kani/releases/tag/kani-0.67.0"]
 observed_on = "2026-08-11"
-reviewed_on = "2026-08-11"
-review_due = "2026-09-11"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os020-physical-frame-allocator"
 
 [[research_decisions]]
@@ -474,8 +514,8 @@ finding = "Current x86-64, stable Rust, paging-invalidation, and comparable-kern
 disposition = "adopted"
 source_urls = ["https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html", "https://doc.rust-lang.org/rustc/platform-support/x86_64-unknown-none.html", "https://doc.rust-lang.org/beta/unstable-book/language-features/abi-x86-interrupt.html", "https://docs.rs/x86_64/latest/x86_64/structures/paging/mapper/index.html", "https://docs.kernel.org/next/x86/tlb.html", "https://docs.sel4.systems/releases/sel4/16.0.0.html"]
 observed_on = "2026-08-12"
-reviewed_on = "2026-08-12"
-review_due = "2026-09-12"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/decisions/0003-address-space-and-fault-containment.md"
 
 [[research_decisions]]
@@ -484,8 +524,8 @@ finding = "Current x86-64, stable Rust, seL4, and Zircon evidence supports provi
 disposition = "adopted"
 source_urls = ["https://www.intel.com/content/www/us/en/developer/articles/technical/intel-sdm.html", "https://docs.amd.com/v/u/en-US/24593_3.44_APM_Vol2", "https://doc.rust-lang.org/reference/inline-assembly.html", "https://docs.sel4.systems/releases/sel4/16.0.0.html", "https://docs.sel4.systems/Tutorials/ipc", "https://fuchsia.dev/fuchsia-src/concepts/kernel/kernel_scheduling", "https://fuchsia.dev/fuchsia-src/reference/kernel_objects/channel"]
 observed_on = "2026-08-13"
-reviewed_on = "2026-08-13"
-review_due = "2026-09-12"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/decisions/0004-cooperative-scheduler-and-inline-ipc.md"
 
 [[research_decisions]]
@@ -494,8 +534,8 @@ finding = "Current seL4 capability-slot and Zircon process-local handle models, 
 disposition = "adopted"
 source_urls = ["https://docs.sel4.systems/Tutorials/capabilities.html", "https://fuchsia.dev/fuchsia-src/concepts/kernel/handles", "https://fuchsia.dev/fuchsia-src/concepts/kernel/rights", "https://fuchsia.dev/reference/syscalls/handle_duplicate", "https://fuchsia.dev/fuchsia-src/get-started/learn/intro/sandboxing", "https://www.nccoe.nist.gov/sites/default/files/2026-02/accelerating-the-adoption-of-software-and-ai-agent-identity-and-authorization-concept-paper.pdf", "https://openai.com/index/hugging-face-model-evaluation-security-incident/"]
 observed_on = "2026-08-13"
-reviewed_on = "2026-08-13"
-review_due = "2026-09-12"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/decisions/0005-task-local-capability-handles.md"
 
 [[research_decisions]]
@@ -504,8 +544,8 @@ finding = "Current identity, capability-routing, and agent-security guidance sup
 disposition = "adopted"
 source_urls = ["https://www.nccoe.nist.gov/sites/default/files/2026-02/accelerating-the-adoption-of-software-and-ai-agent-identity-and-authorization-concept-paper.pdf", "https://github.blog/changelog/2026-07-23-agent-automation-controls-in-github-issues-in-public-preview/", "https://cheatsheetseries.owasp.org/cheatsheets/AI_Agent_Security_Cheat_Sheet.html", "https://fuchsia.dev/fuchsia-src/get-started/learn/components/organizing-components", "https://docs.cedarpolicy.com/auth/authorization.html", "https://datatracker.ietf.org/doc/draft-ietf-oauth-transaction-tokens/"]
 observed_on = "2026-08-28"
-reviewed_on = "2026-08-28"
-review_due = "2026-09-28"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/decisions/0006-fixed-supervisor-and-approval-broker.md"
 
 [[research_decisions]]
@@ -514,8 +554,8 @@ finding = "Current audit guidance supports fixed actor and subject attribution, 
 disposition = "adopted"
 source_urls = ["https://github.blog/changelog/2026-02-26-enterprise-ai-controls-agent-control-plane-now-generally-available/", "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html", "https://csrc.nist.gov/CSRC/media/Projects/risk-management/800-53%20Downloads/800-53r5/SP_800-53_v5_1-derived-OSCAL.pdf", "https://opentelemetry.io/docs/specs/otel/logs/data-model/"]
 observed_on = "2026-08-29"
-reviewed_on = "2026-08-29"
-review_due = "2026-09-29"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/decisions/0007-fixed-effect-journal.md"
 
 [[research_decisions]]
@@ -524,8 +564,8 @@ finding = "UEFI GOP mode and framebuffer values must be copied while the protoco
 disposition = "adopted"
 source_urls = ["https://docs.rs/uefi/0.39.0/uefi/proto/console/gop/struct.GraphicsOutput.html", "https://uefi.org/specs/UEFI/2.11/12_Protocols_Console_Support.html"]
 observed_on = "2026-08-11"
-reviewed_on = "2026-08-11"
-review_due = "2026-09-11"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/roadmap/implementation-roadmap.md#os012-boot-handoff-validation"
 
 [[research_decisions]]
@@ -534,6 +574,36 @@ finding = "SLSA 1.2 and GitHub artifact attestations are suitable future provena
 disposition = "monitoring"
 source_urls = ["https://slsa.dev/spec/v1.2/", "https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations"]
 observed_on = "2026-08-10"
-reviewed_on = "2026-08-10"
-review_due = "2026-09-10"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
 decision_ref = "docs/architecture/overview.md#security-model"
+
+[[research_decisions]]
+id = "RSH-OS041A-TOOLCHAIN-2026Q4"
+finding = "Rust 1.99.0 and uefi 0.41.0 are current while Wasmtime 49.0.2 and the patched 48.0.5 LTS line supersede the earlier 48.0.1 compile-study input. The current host precheck retains the accepted Rust 1.97.1 reproducibility baseline and introduces no UEFI or Wasmtime dependency. A future contained compile-measurement worker must receive a separately reviewed patch-level pin and may not implement 48.0.1."
+disposition = "adopted"
+source_urls = ["https://blog.rust-lang.org/2026/10/01/Rust-1.99.0/", "https://docs.rs/crate/uefi/0.41.0", "https://github.com/bytecodealliance/wasmtime/releases/tag/v49.0.2", "https://github.com/bytecodealliance/wasmtime/releases/tag/v48.0.5"]
+observed_on = "2026-10-07"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
+decision_ref = "docs/roadmap/implementation-roadmap.md#os041a-component-admission-verifier"
+
+[[research_decisions]]
+id = "RSH-LOCKED-DEPENDENCY-BOUNDARY-2026Q4"
+finding = "Recent Rust ecosystem incidents reinforce exact versions, committed lockfiles, offline post-fetch verification, explicit feature review, dependency audits, and distrust of undeclared build-time behavior. The component-admission host workspace therefore remains separately locked, default-feature-minimized, tested offline after exact fetch, audited in the existing read-only CI job, and absent from the target runtime."
+disposition = "adopted"
+source_urls = ["https://blog.rust-lang.org/2026/08/20/supply-chain-attack-on-arrayref/", "https://blog.rust-lang.org/2026/05/25/cve-2026-5222/", "https://docs.github.com/en/actions/reference/security/secure-use", "https://slsa.dev/spec/v1.2/verifying-artifacts"]
+observed_on = "2026-10-07"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
+decision_ref = "docs/development/component-admission.md#verification"
+
+[[research_decisions]]
+id = "RSH-DELEGATED-WORKLOAD-STANDARDS-2026Q4"
+finding = "Current agent identity, authorization, interoperability, and orchestration work continues to favor scoped authority, explicit delegation, protocol-neutral execution boundaries, and reviewable effect evidence. MakopaOS keeps external protocols in replaceable user-space gateways and does not move protocol or model semantics into the kernel or the component admission core."
+disposition = "adopted"
+source_urls = ["https://www.nist.gov/artificial-intelligence/ai-agent-standards-initiative", "https://www.nist.gov/news-events/news/2026/02/new-concept-paper-identity-and-authority-software-agents", "https://blog.modelcontextprotocol.io/posts/mcp-roadmap/", "https://github.com/a2aproject/A2A/releases"]
+observed_on = "2026-10-07"
+reviewed_on = "2026-10-07"
+review_due = "2026-11-07"
+decision_ref = "docs/architecture/overview.md#workload-boundary"

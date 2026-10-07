@@ -18,6 +18,12 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+          fetch-tags: false
+          lfs: false
+          submodules: false
 
       - name: Install pinned system packages
         run: |
@@ -37,6 +43,7 @@ jobs:
         run: |
           rustup toolchain install 1.97.1 \
             --profile minimal \
+            --component clippy \
             --component rustfmt \
             --component llvm-tools-preview \
             --target x86_64-unknown-none,x86_64-unknown-uefi
@@ -53,6 +60,19 @@ jobs:
             -p makopa-frame-allocator \
             -p makopa-kernel-image \
             -p makopa-task-runtime
+
+      - name: Test component admission core
+        run: |
+          cargo +1.97.1 fmt \
+            --manifest-path tools/component-admission/Cargo.toml \
+            --all -- --check
+          cargo +1.97.1 fetch --locked \
+            --manifest-path tools/component-admission/Cargo.toml
+          cargo +1.97.1 test --locked --offline \
+            --manifest-path tools/component-admission/Cargo.toml
+          cargo +1.97.1 clippy --locked --offline \
+            --manifest-path tools/component-admission/Cargo.toml \
+            --all-targets -- -D warnings
 
       - name: Check project evidence
         run: |
@@ -94,3 +114,5 @@ jobs:
         run: |
           cargo +1.97.1 install cargo-audit --version 0.22.2 --locked
           cargo +1.97.1 audit --deny warnings
+          cargo +1.97.1 audit --deny warnings \
+            --file tools/component-admission/Cargo.lock

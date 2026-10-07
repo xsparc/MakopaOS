@@ -1,0 +1,25 @@
+package makopa:component@1.0.0;
+
+interface console {
+  enum write-error {
+    limit-exceeded,
+    unavailable,
+  }
+
+  write-line: func(value: string) -> result<_, write-error>;
+}
+
+interface task {
+  enum run-error {
+    denied,
+    exhausted,
+    host-failure,
+  }
+
+  run: func() -> result<_, run-error>;
+}
+
+world console-workload {
+  import console;
+  export task;
+}

@@ -26,7 +26,10 @@ architecture nevertheless treats isolation claims as testable contracts.
 - a zero, empty, closed, stale, cross-table, wrong-object, or wrong-right handle
   cannot authorize endpoint access or partially mutate runtime state; and
 - address-space frames cannot be returned while the task's capability table or
-  endpoint side still references live state.
+  endpoint side still references live state; and
+- an offline component precheck cannot accept bytes whose fixed records,
+  transitive digests, signature, source inventory, supplied WIT, feature mask,
+  or raw top-level import and export allowlist disagree.
 
 The supervised runtime profile additionally protects these properties within
 the fixed OS031 reference boundary:
@@ -84,6 +87,9 @@ fixed reference boundary:
   effect authority;
 - a compromised trusted supervisor approving or committing an unsafe request;
 - malicious instructions embedded in repository, web, or message content;
+- malformed component records, signatures, source manifests, supporting
+  documents, WIT, Component Model sections, imports, exports, or oversized and
+  symlinked host inputs;
 - compromised dependencies or mutable CI actions;
 - accidental contributor overreach and undocumented architecture drift.
 
@@ -157,6 +163,12 @@ fixed reference boundary:
   externally visible effects are introduced;
 - read-only automation permissions unless a work item requires more;
 - pinned workflow actions and explicit build-tool versions;
+- a separate locked host-only component precheck that uses explicit offsets,
+  bounded reads, exact byte and digest comparison, strict weak-key-aware
+  Ed25519 verification, canonical source inventory, in-memory WIT parsing, an
+  explicit WebAssembly 1.0 plus base Component Model mask, and exact raw
+  console-only surface names without importing these dependencies into the
+  target runtime;
 - deterministic tests for every security invariant before phase promotion.
 
 ## Deferred threats
@@ -219,3 +231,22 @@ identity, human approval, wall-clock order, availability under exhaustion,
 external telemetry conformance, real device or network effects, or containment
 of a compromised supervisor. Those claims require separate storage, identity,
 time, exporter, executor, and recovery decisions.
+
+## OS041A current residual boundary
+
+The host-only checker verifies the three fixed records and their exact
+transitive byte bindings, one configured Ed25519 public key, the canonical
+source manifest against an already staged regular-file root, exact supplied
+WIT bytes, independent final-component validation under the selected feature
+mask, and the raw top-level console-only names and kinds. Its stable report
+states `admission_authority: false`.
+
+The current code does not reconstruct source from committed Git objects,
+produce or sign a fixture, decode the final semantic graph, compare raw,
+decoded, and supplied-WIT interfaces, contain a decoder or compiler worker,
+compile with Wasmtime, or provide link and disassembly provenance. It never
+instantiates or executes a component. A staged-root check alone cannot exclude
+working-tree influence in the producer, and matching raw names alone cannot
+prove matching function and type semantics. Those limitations keep OS041A in
+progress and prevent this precheck from authorizing target integration or
+execution.

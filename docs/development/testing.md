@@ -18,6 +18,8 @@ cargo +1.97.1 test --locked \
   -p makopa-frame-allocator \
   -p makopa-kernel-image \
   -p makopa-task-runtime
+cargo +1.97.1 test --locked --offline \
+  --manifest-path tools/component-admission/Cargo.toml
 ```
 
 The Rust tests enforce the ADR-0001 handoff sizes and field offsets, exercise
@@ -65,6 +67,14 @@ and failed-effect records; resolved capability and kernel-teardown attribution;
 payload redaction; immutable typed reads; zero padding; capacity and sequence
 exhaustion; terminal-before-seal ordering; and final reclamation. The wrapper
 retains fixed storage, `no_std`, and the dependency-free task-runtime manifest.
+The separate OS041A host workspace tests the three fixed admission records,
+exact supporting-document and digest bindings, domain-separated key IDs,
+strict Ed25519 verification, canonical source manifests and staged inventory,
+exact supplied WIT, the WebAssembly 1.0 plus base Component Model mask, raw
+console-only import and export allowlisting, bounded non-file rejection, and
+stable JSON reports. A passing report remains explicitly non-authoritative
+while committed-object reconstruction, contained decoding and compilation,
+semantic graph comparison, and fixture-production evidence are incomplete.
 Normalization remains capped at 1,024 fixed-size region records backed by a 24
 KiB loader-owned buffer. The static evidence check validates schema,
 traceability, local references, and accepted-decision coverage. The dated
@@ -211,10 +221,13 @@ CI installs `cargo-audit` `0.22.2` from its published lockfile and runs:
 
 ```sh
 cargo +1.97.1 audit --deny warnings
+cargo +1.97.1 audit --deny warnings \
+  --file tools/component-admission/Cargo.lock
 ```
 
 This audits the committed `Cargo.lock`, including the exact `x86_64` `0.15.5`
-resolution. It does not imply compiler, firmware,
+resolution, and the separate component-admission host lockfile. It does not
+imply compiler, firmware,
 or system-package provenance beyond the inputs pinned by ADR-0001.
 
 ## Validation language

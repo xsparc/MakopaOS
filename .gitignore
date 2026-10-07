@@ -1,5 +1,6 @@
 /boot.bin
 /build/
 /target/
+/tools/component-admission/target/
 __pycache__/
 *.pyc

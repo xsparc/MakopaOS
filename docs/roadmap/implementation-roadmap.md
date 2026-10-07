@@ -2,7 +2,7 @@
 
 - Status: Active; item states are recorded below
 - Baseline: `a5f45c76f159558b3beb9ec4468295b0895815e9`
-- Updated: 2026-08-29
+- Updated: 2026-09-02
 
 This roadmap turns the architecture into reviewable vertical slices. Proposed
 items describe sequence, not implementation authority. Each item should ship in
@@ -581,29 +581,244 @@ topology remain unchanged unless separately approved.
 
 ### OS040 — Component ABI experiment
 
-Status: Proposed
+Status: Closed
 
 Depends on: OS032
 
-Evaluate a minimal component ABI against maintained WASI 0.2 and stable WASI
-0.3.1 without committing the kernel ABI to either version.
+Select a versioned MakopaOS-owned component-host contract for the first
+console-only workload and compare WASI 0.2.12 with stable WASI 0.3.1 without
+committing the kernel ABI to either version.
 
-Acceptance: a decision compares stable WASI 0.3.1, including its Component
-Model `map`, `implements`, and `external-id` additions, with the maintained
-WASI 0.2 baseline across footprint, native async behavior, capability mapping,
-runtime and toolchain maturity, migration cost, and rollback. Neither version
-becomes a kernel ABI.
+Decision:
+[ADR-0008](../architecture/decisions/0008-versioned-console-component-host-contract.md)
+selects `ComponentHostContractV1` at the user-space workload boundary. The
+first profile uses complete import enumeration and exact allowlisting of only
+the owned bounded console interface, plus the exact task export. A fixed signed
+admission record binds the portable artifact, optional target executable, WIT,
+execution profile, build evidence, and finite resource bounds. Wasmtime
+`48.0.1` is a compile-only host-side measurement baseline on the 48 LTS line,
+not an approved dependency or runtime. Its embedded 0.254.0 parser family is a
+separately reported differential input only.
 
-### OS041 — Sandboxed component host
+Profile zero selects WebAssembly 1.0 plus the base Component Model. Its fixture
+production pins Rust `1.97.1`, `wasm32v1-none`, and `wit-bindgen` 0.61.1 with
+default features disabled and only `macros` enabled. Direct-final generation
+names the checked-in WIT path and exact world, disables custom-section link
+helpers, semver import merging, LTO, and linker-plugin LTO. Legacy core-name
+compatibility is confined to componentization of the exact verified producer
+output; supplied WIT and final-component identities remain strict. Binding
+overrides, adapters, libraries, import remapping, and every allocator except a
+fixture-local trap-only allocation sentinel are prohibited. The accepted
+contract pins the published package digest and binary-format inventory and
+requires isolated offline build, exact realloc-scaffold extraction, negative
+task-path reachability, zero-`memory.grow`, disassembly, section, symbol, and
+target-feature evidence.
+
+Build evidence keeps its fixed 256-byte record and the admission signature
+keeps its exact 318-byte message. Source-revision kind 1 binds a bounded
+canonical MakopaOS source manifest: the repository and subtree, Git SHA-1 tree
+locator, and complete sorted regular-file inventory of modes, lengths, and
+per-file SHA-256 values. The SHA-1 value is only an object locator; independently
+reconstructed and read-back-verified file SHA-256 values bind the actual source
+bytes. Fixture staging uses committed Git objects from an explicit revision,
+never the checkout working tree or persisted checkout credentials.
+
+Independent admission pins `wasmparser` 0.258.0 with default Cargo features
+disabled and only `std`, `validate`, `features`, and `component-model` enabled.
+Profile zero and the WASI 0.2.12 study use exactly WebAssembly 1.0 plus the base
+Component Model runtime mask; the separate WASI 0.3.1 study adds only native
+async. All other extensions, including map, implements, version suffixes, and
+external IDs, fail closed. Raw final bytes, decoded metadata, and separately
+supplied WIT must independently encode the same exact interface graph.
+
+Acceptance: the accepted decision compares WASI 0.2.12 and 0.3.1 across
+stability, native async behavior, Component Model features, capability mapping,
+toolchain maturity, migration, and rollback; defines fixed-width
+little-endian records, exact Ed25519 verification, exact interface allowlisting,
+capability mapping, resource, fuel, trap, cancellation, rollback, teardown,
+repeated-run, and provenance evidence; and records allocator, linear-memory,
+artifact-loading, AOT, platform-hook, and execution-context prerequisites.
+Neither WASI release nor Wasmtime becomes a kernel ABI or approved dependency.
+Admission independently validates the exact final bytes and contains decoding
+and compilation in separate bounded workers that cannot publish partial
+evidence. Profile-zero WIT remains capped at 65536 bytes; the larger P2 and P3
+closures use separate 131072-byte non-admission study envelopes.
+
+Non-scope: code, dependencies, CI changes, boot behavior, component execution,
+phase promotion, releases, dynamic artifact loading, external protocols, and
+runtime adoption.
+
+### OS041A — Component admission verifier
+
+Status: In progress
+
+Depends on: OS040
+
+Implement the host-side admission boundary for the fixed
+`ComponentAdmissionV1` bundle. Pin Ed25519 scheme 1 through
+`ed25519-dalek = "=3.0.0"` strict verification and `sha2 = "=0.11.0"`, with
+default features disabled for both crates and no optional verifier features.
+Pin one public test trust root and derived key ID, the `wasmparser`,
+`wit-component`, and `wit-parser` 0.258.0 inspection family, and a separately
+reported Wasmtime `48.0.1`/parser 0.254.0 compile-measurement configuration.
+Produce the frozen verifier-only positive fixture with Rust `1.97.1`,
+`wasm32v1-none`, and `wit-bindgen` 0.61.1 with default features disabled and
+only `macros` enabled. Name the checked-in WIT path and exact world, retain
+component-type metadata while disabling custom-section link helpers, disable
+semver import merging, and confine legacy core-name compatibility to
+componentization of the exact verified producer output. Reject legacy supplied
+WIT and final-component identities. Prohibit binding overrides, adapters,
+libraries, import remapping, and every allocator except a fixture-local
+trap-only allocation sentinel. Implement the fixed 288-byte
+`ComponentAdmissionV1`, 224-byte `ExecutionProfileV1`, and 256-byte
+`BuildEvidenceV1` serialized layouts and their separately supplied,
+length-and-digest-bound documents. Parse records through checked explicit
+little-endian slices. No private signing seed, signer, or key-generation path
+is committed.
+
+Implement source-revision kind 1 as the exact bounded
+`makopa-source-manifest-v1` grammar selected by ADR-0008. A trusted parent must
+resolve its declared subtree from the explicit expected revision, enumerate and
+stream committed Git blobs under the fixed path, mode, count, and byte limits,
+stage them into a fresh root with create-once and no-follow semantics, and have
+an independent checker read back and compare the complete signed inventory.
+The worker receives no working-tree, `.git`, hook, configuration, untracked,
+ignored, modified, or persisted-credential content.
+
+Current delivery: the separate locked host workspace now implements the three
+fixed record parsers, exact supporting-document and SHA-256 bindings,
+domain-separated signing-key IDs, strict Ed25519 verification, canonical
+source-manifest parsing and staged-root inventory checks, exact supplied-WIT
+validation, the explicit WebAssembly 1.0 plus base Component Model mask, raw
+console-only import and export allowlisting, and deterministic bounded JSON
+reports. The report explicitly carries `admission_authority: false`; the
+remaining acceptance work below must complete before the tool may authorize a
+component. This delivery changes no target dependency, boot path, kernel state,
+QEMU transcript, component execution behavior, release, or project phase.
+
+Research refresh (2026-10-07): Rust `1.99.0`, `uefi` `0.41.0`, Wasmtime
+`49.0.2`, and the patched `48.0.5` LTS line are now available. This delivery
+retains the accepted Rust `1.97.1` reproducibility baseline and adds no UEFI or
+Wasmtime dependency. The future contained compile-measurement worker must not
+implement the earlier `48.0.1` study pin; it requires a separately reviewed
+patch-level refresh before that worker is introduced.
+
+Acceptance: deterministic host evidence rejects altered records, artifacts,
+executables, WIT, execution profiles, build evidence, signatures, keys,
+targets, runtimes, bounds, imports, exports, and reserved fields, including
+wrong-size, non-canonical, weak-key, unknown-scheme, unknown-key, and key-ID
+cases. Fixed-record enums, lengths, digests, reserved bytes, supporting
+documents, transitive bindings, and the exact 318-byte signature message are
+verified. Parser and validator use the same explicit runtime mask; byte size,
+nesting, parent ranges, sections, types, imports, exports, custom sections, and
+names are bounded before independent complete validation of the exact final
+bytes and before compilation.
+
+Source evidence rejects every changed file byte, path, mode, length, digest,
+tree locator, repository, subtree, count, order, line ending, trailing byte,
+non-ASCII byte, non-canonical path, duplicate or prefix-colliding path, symlink,
+gitlink, special mode, non-blob leaf, missing or extra entry, Git object type or
+size mismatch, exceeded per-file or aggregate bound, and producer/checker
+disagreement. A matching SHA-1 locator never overrides a SHA-256 inventory
+mismatch. Tests also prove modified and untracked checkout content and `.git`
+state cannot enter the build.
+
+The verifier enumerates the raw Component Model surface, parses supplied WIT
+through the exact in-memory `SourceMap` path, and confines decoding and
+compile-only measurement to separate pinned workers. Workers clear the
+environment, fix their working directory, apply resource limits before a READY
+frame, use bounded versioned pipes, and are killed and reaped after timeout,
+overflow, or protocol failure. They never receive paths, URLs, adapters,
+libraries, or maps and never instantiate or execute a component. Complete
+results are checked before publication; unsupported containment fails closed.
+
+Raw, decoded, and supplied-WIT surfaces produce byte-equal fixed semantic
+graphs containing exact versioned identities, directions, functions, ordered
+parameters and results, recursive types, and declared enum-case order. Only
+unordered maps are sorted by raw UTF-8 bytes. Duplicate, parallel, raw-only,
+decoded-only, WIT-only, semver-normalized, legacy, remapped, `implements`,
+`version_suffix`, `external_id`, and parser-family disagreement cases fail
+closed. Complete enumeration permits exactly the console import and task export
+and rejects generic WASI and every undeclared import.
+
+The isolated offline fixture build pins the exact SHA-256-bound source manifest,
+registry package digest, binary-format inventory, Cargo, rustc, and LLD; clears
+ambient Cargo and Rust configuration; disables persisted checkout credentials;
+sets one codegen unit; disables LTO and linker-plugin LTO; and records effective
+arguments, map, extraction, traced-input, garbage-collection, section, symbol,
+target-feature, direct-call-graph, and disassembly evidence. That evidence
+permits only the exact pinned realloc scaffold and versioned wrapper, proves the
+task path cannot reach realloc, allocation, or panic code, proves the core
+contains no `memory.grow`, and proves the final semantic surface contains only
+the strict console import and task export. The P0/P2
+Wasmtime worker enables only `component-model` and `cranelift`; P3 uses a
+separate build that also records `component-model-async`. Equivalent WASI
+0.2.12 and 0.3.1 fixtures produce compile-only comparison evidence under their
+separate non-admission envelopes.
+
+Non-scope: target runtime dependencies, target or general-purpose allocator or
+page-table changes, executable mappings, boot behavior, component execution,
+releases, and phase promotion.
+
+### OS041B — Component memory and execution-substrate decision
 
 Status: Proposed
 
-Depends on: accepted OS040 decision
+Depends on: OS041A
 
-Run one signed test component with console-only authority.
+Use the admission and measurement evidence to select the target allocator,
+immutable artifact loading, AOT representation, W^X code publication,
+linear-memory ownership, stack, deterministic fuel, trap, cancellation,
+runtime-metadata, rollback, and teardown contract.
 
-Acceptance: undeclared filesystem, network, clock, and device imports fail
-closed; the permitted console call is recorded.
+Acceptance: an accepted decision pins exact finite ceilings and defines
+state-preserving failure and reverse-order reclamation for code, data, runtime
+metadata, canonical ABI temporaries, host-call buffers, import bindings,
+capabilities, tasks, mappings, and frames. It identifies the exact runtime and
+platform hooks, if any, that a later experiment may use.
+
+Non-scope: runtime integration, component imports, boot transcript changes,
+releases, and phase promotion.
+
+### OS041C — Component runtime platform experiment
+
+Status: Proposed
+
+Depends on: accepted OS041B decision
+
+Integrate only the selected runtime substrate and platform hooks without
+exposing a component import.
+
+Acceptance: host and QEMU evidence covers exact footprint, allocation failure,
+code and data permissions, linear-memory bounds, stack and deterministic fuel,
+trap classification, cancellation boundaries, construction rollback, complete
+teardown, and two fresh constructions without residual state. Existing boot,
+isolation, authority, approval, and effect-journal evidence remains unchanged.
+
+Non-scope: console mapping, generic WASI worlds, dynamic artifacts, filesystem,
+network, clock, random, environment, credentials, devices, releases, and phase
+promotion.
+
+### OS041D — Console-only component execution
+
+Status: Proposed
+
+Depends on: OS041C
+
+Run the immutable admitted profile-0 test component twice with only the bounded
+console import.
+
+Acceptance: the host resolves one manifest-routed console capability, denies
+every undeclared import before instantiation, enforces the admitted resource
+and fuel bounds, records one console call and one terminal outcome per run,
+proves trap and cancellation cleanup, and reaches complete reclamation between
+runs. The pinned `qemu64` one-vCPU gate preserves all earlier transcripts and
+adds a component terminal record only after no code, memory, runtime resource,
+host call, import, capability, task, mapping, or frame reference remains.
+
+Non-scope: full WASI 0.2 or 0.3 worlds, async composition, dynamic loading,
+filesystem, network, clock, random, environment, process, credentials, devices,
+real effects, releases, and phase promotion.
 
 ## Phase 5: Interoperability gateways
 
@@ -611,7 +826,7 @@ closed; the permitted console call is recorded.
 
 Status: Proposed
 
-Depends on: OS041
+Depends on: OS041D
 
 Map a small, versioned local tool schema onto supervisor requests.
 
