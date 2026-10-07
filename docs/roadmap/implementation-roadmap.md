@@ -650,7 +650,7 @@ runtime adoption.
 
 ### OS041A — Component admission verifier
 
-Status: Proposed
+Status: In progress
 
 Depends on: OS040
 
@@ -684,6 +684,24 @@ stage them into a fresh root with create-once and no-follow semantics, and have
 an independent checker read back and compare the complete signed inventory.
 The worker receives no working-tree, `.git`, hook, configuration, untracked,
 ignored, modified, or persisted-credential content.
+
+Current delivery: the separate locked host workspace now implements the three
+fixed record parsers, exact supporting-document and SHA-256 bindings,
+domain-separated signing-key IDs, strict Ed25519 verification, canonical
+source-manifest parsing and staged-root inventory checks, exact supplied-WIT
+validation, the explicit WebAssembly 1.0 plus base Component Model mask, raw
+console-only import and export allowlisting, and deterministic bounded JSON
+reports. The report explicitly carries `admission_authority: false`; the
+remaining acceptance work below must complete before the tool may authorize a
+component. This delivery changes no target dependency, boot path, kernel state,
+QEMU transcript, component execution behavior, release, or project phase.
+
+Research refresh (2026-10-07): Rust `1.99.0`, `uefi` `0.41.0`, Wasmtime
+`49.0.2`, and the patched `48.0.5` LTS line are now available. This delivery
+retains the accepted Rust `1.97.1` reproducibility baseline and adds no UEFI or
+Wasmtime dependency. The future contained compile-measurement worker must not
+implement the earlier `48.0.1` study pin; it requires a separately reviewed
+patch-level refresh before that worker is introduced.
 
 Acceptance: deterministic host evidence rejects altered records, artifacts,
 executables, WIT, execution profiles, build evidence, signatures, keys,
